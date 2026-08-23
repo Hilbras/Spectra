@@ -1,0 +1,92 @@
+{
+  "name": "@hilbras/spectra",
+  "version": "0.0.5",
+  "description": "Autonomous AI security research engine for analyzing, investigating, and validating vulnerabilities in software projects.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "spectra": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./domain": {
+      "import": "./dist/domain/index.js",
+      "types": "./dist/domain/index.d.ts"
+    },
+    "./tools": {
+      "import": "./dist/tools/index.js",
+      "types": "./dist/tools/index.d.ts"
+    },
+    "./investigation": {
+      "import": "./dist/investigation/index.js",
+      "types": "./dist/investigation/index.d.ts"
+    },
+    "./findings": {
+      "import": "./dist/findings/index.js",
+      "types": "./dist/findings/index.d.ts"
+    },
+    "./policies": {
+      "import": "./dist/policies/index.js",
+      "types": "./dist/policies/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "oxlint src/",
+    "clean": "rm -rf dist"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Hilbras/spectra.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Hilbras/spectra/issues"
+  },
+  "homepage": "https://github.com/Hilbras/spectra",
+  "dependencies": {
+    "@hilbras/sdk": "file:../SDK",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/auto-instrumentations-node": "^0.78.0",
+    "@opentelemetry/sdk-node": "^0.220.0",
+    "better-sqlite3": "^13.0.3",
+    "drizzle-orm": "^0.45.2",
+    "fastify": "^5.0.0",
+    "postgres": "^3.4.9",
+    "uuid": "^11.0.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^22.20.1",
+    "@types/uuid": "^10.0.0",
+    "drizzle-kit": "^0.31.0",
+    "oxlint": "^1.79.0",
+    "ts-morph": "^25.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    ".github"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
