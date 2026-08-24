@@ -14,7 +14,6 @@ export function Landing() {
   const [error, setError] = useState('')
   const [health, setHealth] = useState<any>(null)
 
-  // Load health on mount
   useEffect(() => {
     api.getHealth().then(setHealth).catch(() => {})
   }, [])
@@ -34,33 +33,49 @@ export function Landing() {
   }
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="relative flex flex-col min-h-screen overflow-hidden">
+      {/* Animated background gradient */}
+      <div className="fixed inset-0 z-0">
+        <div className="absolute inset-0 bg-background" />
+        {/* Radial glow behind the hero content */}
+        <div className="absolute top-[35%] left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-gold-500/[0.06] dark:bg-gold-500/10 rounded-full blur-[120px] pointer-events-none" />
+        {/* Subtle grid overlay */}
+        <div
+          className="absolute inset-0 opacity-[0.03] dark:opacity-[0.05]"
+          style={{ backgroundImage: 'radial-gradient(circle, currentColor 1px, transparent 1px)', backgroundSize: '32px 32px' }}
+        />
+      </div>
+
       {/* Navbar */}
-      <header className="fixed top-0 inset-x-0 z-50 px-6 py-4">
-        <div className="mx-auto max-w-5xl">
-          <div className="glass rounded-2xl flex items-center justify-between h-14 px-5">
+      <header className="fixed top-0 inset-x-0 z-50 px-4 py-4 sm:px-6">
+        <div className="mx-auto max-w-4xl">
+          <div className="glass rounded-2xl flex items-center justify-between h-13 px-5 border border-border/40">
             <div className="flex items-center gap-2.5">
               <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-gold-400 to-gold-600 shadow-md shadow-gold-500/20">
                 <Shield className="size-4 text-black" />
               </div>
               <span className="font-bold text-sm tracking-tight">Hilbras Spectra</span>
             </div>
+
             <nav className="hidden md:flex items-center gap-6 text-sm text-muted-foreground">
               <span className="flex items-center gap-1.5">
                 <Activity className="size-3.5 text-green-500" />
                 {health?.status === 'ok' ? 'System Ready' : 'Initializing...'}
               </span>
             </nav>
-            <ThemeToggle />
-            <Button variant="ghost" size="sm" className="rounded-xl text-xs" onClick={() => navigate('/settings')}>
-              Settings
-            </Button>
+
+            <div className="flex items-center gap-1">
+              <ThemeToggle />
+              <Button variant="ghost" size="sm" className="rounded-xl text-xs h-8 px-3" onClick={() => navigate('/settings')}>
+                Settings
+              </Button>
+            </div>
           </div>
         </div>
       </header>
 
       {/* Hero */}
-      <main className="flex-1 flex flex-col items-center justify-center px-4 pt-24 pb-16">
+      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 py-32 pb-20">
         {/* Badge */}
         <div className="mb-6 fade-in">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-gold-500/10 text-gold-600 dark:text-gold-400 border border-gold-500/20">
@@ -70,7 +85,7 @@ export function Landing() {
         </div>
 
         {/* Title */}
-        <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-center fade-in" style={{ animationDelay: '0.1s' }}>
+        <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight text-center fade-in" style={{ animationDelay: '0.1s' }}>
           Analyze any project
           <br />
           <span className="bg-gradient-to-r from-gold-400 via-gold-500 to-gold-700 bg-clip-text text-transparent">
@@ -78,12 +93,12 @@ export function Landing() {
           </span>
         </h1>
 
-        <p className="mt-4 text-base text-muted-foreground text-center max-w-lg leading-relaxed fade-in" style={{ animationDelay: '0.2s' }}>
+        <p className="mt-5 text-base sm:text-lg text-muted-foreground text-center max-w-lg leading-relaxed fade-in" style={{ animationDelay: '0.2s' }}>
           Hilbras Spectra uses AI to investigate dependencies, attack surfaces, and security flaws. Connect your project and get actionable results.
         </p>
 
         {/* Mode Toggle */}
-        <div className="mt-10 flex items-center gap-1 p-1 rounded-2xl glass fade-in" style={{ animationDelay: '0.3s' }}>
+        <div className="mt-10 flex items-center gap-1 p-1 rounded-2xl glass border border-border/40 fade-in" style={{ animationDelay: '0.3s' }}>
           <button
             onClick={() => setMode('link')}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
@@ -110,7 +125,7 @@ export function Landing() {
 
         {/* Input Area */}
         <div className="mt-6 w-full max-w-xl fade-in" style={{ animationDelay: '0.4s' }}>
-          <div className="glass rounded-2xl p-6 space-y-4">
+          <div className="glass rounded-2xl p-6 space-y-4 border border-border/40">
             {mode === 'link' ? (
               <>
                 <div className="flex items-center gap-3">
@@ -172,7 +187,7 @@ export function Landing() {
             <Button
               variant="gold"
               size="lg"
-              className="w-full rounded-xl gap-2"
+              className="w-full rounded-xl gap-2 h-11"
               disabled={loading || !input.trim() || (mode === 'upload' && !file)}
               onClick={startAudit}
             >
@@ -199,7 +214,7 @@ export function Landing() {
             { icon: Activity, label: 'AI-Powered' },
             { icon: FolderGit2, label: 'Multi-Language' },
           ].map(({ icon: Icon, label }) => (
-            <div key={label} className="flex items-center gap-2 px-4 py-2 rounded-xl glass text-xs text-muted-foreground">
+            <div key={label} className="flex items-center gap-2 px-4 py-2 rounded-xl glass text-xs text-muted-foreground border border-border/30">
               <Icon className="size-3.5 text-gold-500" />
               {label}
             </div>
@@ -208,7 +223,7 @@ export function Landing() {
       </main>
 
       {/* Footer */}
-      <footer className="py-6 text-center text-xs text-muted-foreground">
+      <footer className="relative z-10 py-6 text-center text-xs text-muted-foreground">
         <p>Hilbras Spectra v0.0.6 — AI Security Research Platform</p>
       </footer>
     </div>

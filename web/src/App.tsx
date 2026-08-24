@@ -19,38 +19,42 @@ const APP_ROUTES = ['/audit', '/findings', '/history', '/projects', '/settings',
 function Layout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false)
   const location = useLocation()
-  const isApp = APP_ROUTES.some(r => location.pathname.startsWith(r)) || location.pathname === '/' && false // never true — landing takes "/"
+  const isApp = APP_ROUTES.some(r => location.pathname.startsWith(r))
 
   return (
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
-      {isApp && <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(c => !c)} />}
-
-      {isApp ? (
-        <div className="flex flex-col flex-1 min-w-0">
-          <header className="glass sticky top-0 z-30 flex items-center h-16 px-6 border-b border-border/50">
-            <div className="flex items-center gap-3 flex-1 max-w-md">
-              <Search className="size-4 text-muted-foreground shrink-0" />
-              <input
-                placeholder="Search findings, audits, projects..."
-                className="flex-1 bg-transparent border-none outline-none text-sm placeholder:text-muted-foreground"
-              />
-            </div>
-            <div className="flex items-center gap-1 ml-auto">
-              <button className="relative p-2 rounded-xl hover:bg-gold-500/10 transition-colors">
-                <Bell className="size-4 text-muted-foreground" />
-                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-gold-500 animate-[pulse-gold_2s_ease-in-out_infinite]" />
-              </button>
-              <ThemeToggle />
-            </div>
-          </header>
-          <main className="flex-1 overflow-y-auto">
-            <div className="p-6 lg:p-8 max-w-7xl mx-auto">
-              {children}
-            </div>
-          </main>
+      {isApp && (
+        <>
+          <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(c => !c)} />
+          <div className="flex flex-col flex-1 min-w-0">
+            <header className="glass sticky top-0 z-30 flex items-center h-16 px-6 border-b border-border/50">
+              <div className="flex items-center gap-3 flex-1 max-w-md">
+                <Search className="size-4 text-muted-foreground shrink-0" />
+                <input
+                  placeholder="Search findings, audits, projects..."
+                  className="flex-1 bg-transparent border-none outline-none text-sm placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="flex items-center gap-1 ml-auto">
+                <button className="relative p-2 rounded-xl hover:bg-gold-500/10 transition-colors">
+                  <Bell className="size-4 text-muted-foreground" />
+                  <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-gold-500 animate-[pulse-gold_2s_ease-in-out_infinite]" />
+                </button>
+                <ThemeToggle />
+              </div>
+            </header>
+            <main className="flex-1 overflow-y-auto">
+              <div className="p-6 lg:p-8 max-w-7xl mx-auto">
+                {children}
+              </div>
+            </main>
+          </div>
+        </>
+      )}
+      {!isApp && (
+        <div className="w-full h-full">
+          {children}
         </div>
-      ) : (
-        <>{children}</>
       )}
     </div>
   )
