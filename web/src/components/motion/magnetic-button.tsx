@@ -1,4 +1,4 @@
-import { ReactNode, useRef, useEffect, useState } from 'react'
+import { ReactNode, useRef, useEffect, CSSProperties } from 'react'
 import { motion, useMotionValue, useSpring } from 'framer-motion'
 
 interface MagneticButtonProps {
@@ -7,6 +7,7 @@ interface MagneticButtonProps {
   className?: string
   onClick?: () => void
   disabled?: boolean
+  style?: CSSProperties
 }
 
 export function MagneticButton({
@@ -15,8 +16,9 @@ export function MagneticButton({
   className = '',
   onClick,
   disabled,
+  style,
 }: MagneticButtonProps) {
-  const ref = useRef<HTMLButtonElement>(null)
+  const ref = useRef<HTMLDivElement>(null)
   const x = useMotionValue(0)
   const y = useMotionValue(0)
   const springX = useSpring(x, { stiffness: 150, damping: 15, mass: 0.1 })
@@ -50,14 +52,17 @@ export function MagneticButton({
   }, [strength, x, y])
 
   return (
-    <motion.button
+    <motion.div
       ref={ref}
       className={className}
-      style={{ x: springX, y: springY }}
-      onClick={onClick}
-      disabled={disabled}
+      style={{ x: springX, y: springY, cursor: disabled ? 'not-allowed' : 'pointer' }}
+      onClick={disabled ? undefined : onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } } : undefined}
+      aria-disabled={disabled}
     >
       {children}
-    </motion.button>
+    </motion.div>
   )
 }
