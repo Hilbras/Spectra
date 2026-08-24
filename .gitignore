@@ -34,3 +34,6 @@ temp/
 
 # Spectra audit data
 .spectra/
+node_modules/
+dist/
+.npmrc
