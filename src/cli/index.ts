@@ -32,7 +32,7 @@ import type { ReportFormatter } from "../reports/formatters.js";
 import { loadConfig, saveConfig, addProfile, removeProfile, listProfiles } from "./config.js";
 import { section, divider, success, error, warn, colorize, statusBadge } from "./progress.js";
 
-const VERSION = "0.0.5";
+const VERSION = "0.0.6";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
