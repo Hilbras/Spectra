@@ -126,27 +126,22 @@ class ReconnaissanceHandler extends BasePhaseHandler {
   readonly phase = "RECONNAISSANCE";
 
   protected async doExecute(ctx: PhaseHandlerContext): Promise<PhaseResult> {
-    // Discover repo structure in depth
+    // Discover repo structure and file tree
     const repo = await this.executeTool(ctx, "repository.discover", { depth: 4 });
-    // Scan for secrets
+    // Scan for secrets (allowed in RECONNAISSANCE)
     const secrets = await this.executeTool(ctx, "secrets.scan", {});
-    // Analyze dependencies
-    const deps = await this.executeTool(ctx, "dependencies.analyze", {
-      packageManager: "npm",
-      includeTransitive: true,
-    });
-    // Analyze configuration
-    const _config = await this.executeTool(ctx, "configuration.analyze", {});
+    // Analyze configuration (allowed in RECONNAISSANCE)
+    const config = await this.executeTool(ctx, "configuration.analyze", {});
 
-    const findings = [
-      ...(secrets ? [{ type: "secrets", count: (secrets as { findings?: { count?: number } }).findings?.count ?? 0 }] : []),
-      ...(deps ? [{ type: "deps", count: (deps as { vulnerabilities?: { count?: number } }).vulnerabilities?.count ?? 0 }] : []),
-    ];
+    const _secretsResult = secrets as { findings?: { count?: number } } | null;
+    const _configResult = config as { issues?: { count?: number } } | null;
+    const secretCount = _secretsResult?.findings?.count ?? 0;
+    const configCount = _configResult?.issues?.count ?? 0;
 
     return {
       completed: true,
       nextPhase: "ARCHITECTURE_ANALYSIS",
-      summary: `Recon complete — repo: ${repo ? "found" : "not found"}, secrets: ${findings.filter(f => f.type === "secrets").map(f => f.count).reduce((a, b) => a + b, 0)}, deps: ${findings.filter(f => f.type === "deps").map(f => f.count).reduce((a, b) => a + b, 0)} issues`,
+      summary: `Recon complete — repo: ${repo ? "found" : "not found"}, secrets: ${secretCount}, config issues: ${configCount}`,
     };
   }
 }
@@ -157,27 +152,33 @@ class ArchitectureAnalysisHandler extends BasePhaseHandler {
   readonly phase = "ARCHITECTURE_ANALYSIS";
 
   protected async doExecute(ctx: PhaseHandlerContext): Promise<PhaseResult> {
-    // Search for main entry points and framework files
+    // Search for main entry points and framework signatures (allowed in ARCHITECTURE_ANALYSIS)
     const routes = await this.executeTool(ctx, "search.code", {
       query: "app\\.use|router|createServer|listen\\(",
       scope: "project",
     });
-    const packages = await this.executeTool(ctx, "filesystem.read", {
-      path: "package.json",
+    const packages = await this.executeTool(ctx, "search.code", {
+      query: "^\\s*name\\s*:",
+      scope: "file",
+      resultLimit: 5,
     });
-    const cargo = await this.executeTool(ctx, "filesystem.read", {
-      path: "Cargo.toml",
+    const cargo = await this.executeTool(ctx, "search.code", {
+      query: "\\[package\\]",
+      scope: "file",
+      resultLimit: 5,
     });
-    const goMod = await this.executeTool(ctx, "filesystem.read", {
-      path: "go.mod",
+    const goMod = await this.executeTool(ctx, "search.code", {
+      query: "^module ",
+      scope: "file",
+      resultLimit: 5,
     });
 
-    const tech = [packages, cargo, goMod].filter(Boolean).length > 0 ? "detected" : "unknown";
+    const detected = [packages, cargo, goMod].filter(Boolean).length > 0 ? "detected" : "unknown";
 
     return {
       completed: true,
       nextPhase: "ATTACK_SURFACE_MAPPING",
-      summary: `Architecture analyzed — tech stack: ${tech}, routes discovered: ${routes ? "yes" : "no"}`,
+      summary: `Architecture analyzed — tech stack: ${detected}, route patterns: ${routes ? "yes" : "no"}`,
     };
   }
 }
@@ -188,21 +189,15 @@ class AttackSurfaceMappingHandler extends BasePhaseHandler {
   readonly phase = "ATTACK_SURFACE_MAPPING";
 
   protected async doExecute(ctx: PhaseHandlerContext): Promise<PhaseResult> {
-    const apiResults = await this.executeTool(ctx, "api.inspect", {});
-    const _searchRoutes = await this.executeTool(ctx, "search.code", {
-      query: "/api/|/v[0-9]|route|endpoint",
-      scope: "project",
-      resultLimit: 50,
-    });
-
-    const endpointCount = typeof apiResults === "object" && apiResults !== null
-      ? (apiResults as { totalEndpoints?: number }).totalEndpoints ?? 0
-      : 0;
+    // Use filesystem.list to enumerate the project tree and identify entry points
+    const tree = await this.executeTool(ctx, "filesystem.list", { path: ".", recursive: true });
+    const files = Array.isArray(tree?.data) ? tree.data : [];
+    const extCount = files.filter((f: string) => /\.(ts|js|mjs|cjs|py|go|rs)$/.test(f)).length;
 
     return {
       completed: true,
       nextPhase: "SOURCE_ANALYSIS",
-      summary: `Attack surface mapped — ${endpointCount} endpoints discovered`,
+      summary: `Attack surface mapped — ${files.length} files enumerated, ${extCount} source files identified`,
     };
   }
 }
