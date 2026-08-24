@@ -12,13 +12,37 @@ import { homedir } from "os";
 const CONFIG_DIR = join(homedir(), ".spectra");
 const CONFIG_FILE = join(CONFIG_DIR, "config.json");
 
+export interface ModelProviderConfig {
+  /** Model identifier (e.g., "gpt-4o", "claude-3-5-sonnet-20241022", "llama3.2") */
+  model?: string;
+  /** Base URL override (for custom endpoints or Ollama) */
+  baseUrl?: string;
+  /** Temperature 0.0–2.0 */
+  temperature?: number;
+  /** Max tokens */
+  maxTokens?: number;
+}
+
 export interface SpectraConfig {
-  /** Default AI model provider (e.g., "mock", "openai", "anthropic") */
+  /** Default AI model provider (e.g., "mock", "openai", "anthropic", "groq", "ollama") */
   defaultModel?: string;
+  /** Model configurations per provider */
+  models?: {
+    openai?: ModelProviderConfig;
+    anthropic?: ModelProviderConfig;
+    groq?: ModelProviderConfig;
+    ollama?: ModelProviderConfig;
+  };
   /** Default output format for reports (json | sarif | markdown) */
   defaultFormat?: "json" | "sarif" | "markdown";
   /** Auto-confirm findings above this severity (low | medium | high | critical) */
   autoApproveThreshold?: "low" | "medium" | "high" | "critical";
+  /** Webhook notifications */
+  webhooks?: {
+    slack?: { url: string; channel?: string };
+    discord?: { url: string };
+    teams?: { url: string };
+  };
   /** Saved project profiles */
   profiles?: Record<string, { path: string; tags?: string[]; lastAudit?: string }>;
   /** API keys per provider */
@@ -27,10 +51,12 @@ export interface SpectraConfig {
 
 const DEFAULT_CONFIG: SpectraConfig = {
   defaultModel: "mock",
+  models: {},
   defaultFormat: "json",
   autoApproveThreshold: "medium",
   profiles: {},
   apiKeys: {},
+  webhooks: {},
 };
 
 export function loadConfig(): SpectraConfig {
