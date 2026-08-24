@@ -49,7 +49,6 @@ function dim(t: string) { return c(t, C.gray); }
 
 function divider() { return c("  " + "─".repeat(70), C.gray); }
 function section(title: string) { return `\n${c(title, C.bold + C.cyan)}\n${divider()}\n`; }
-function endSection() { return `\n${divider()}\n`; }
 
 function scoreMeter(score: number, width = 40): string {
   const filled = Math.round((score / 100) * width);
