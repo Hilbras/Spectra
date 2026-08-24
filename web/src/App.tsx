@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
-import { AnimatePresence, motion } from 'framer-motion'
+import { AnimatePresence, motion, easeInOut } from 'framer-motion'
 import { Sidebar } from './components/sidebar'
 import { ThemeProvider } from './components/theme-provider'
 import { ThemeToggle } from './components/theme-toggle'
@@ -22,7 +22,7 @@ const pageTransition = {
   initial: { opacity: 0, y: 8 },
   animate: { opacity: 1, y: 0 },
   exit: { opacity: 0, y: -8 },
-  transition: { duration: 0.2, ease: 'easeInOut' },
+  transition: { duration: 0.2, ease: easeInOut },
 }
 
 function Layout({ children }: { children: React.ReactNode }) {
