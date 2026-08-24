@@ -1,6 +1,6 @@
 {
   "name": "@hilbras/spectra",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Autonomous AI security research engine for analyzing, investigating, and validating vulnerabilities in software projects.",
   "type": "module",
   "main": "./dist/index.js",
