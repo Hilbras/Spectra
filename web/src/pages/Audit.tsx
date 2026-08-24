@@ -1,6 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api } from '../hooks/useApi'
+import { ArrowLeft, Play, Loader2, CheckCircle2, Terminal, Info } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { api } from '@/hooks/useApi'
 
 export function Audit() {
   const navigate = useNavigate()
@@ -8,156 +13,206 @@ export function Audit() {
   const [depth, setDepth] = useState<'quick' | 'full'>('full')
   const [format, setFormat] = useState('json')
   const [model, setModel] = useState('mock')
-  const [dryRun, setDryRun] = useState(false)
   const [running, setRunning] = useState(false)
-  const [progress, setProgress] = useState<string>('')
   const [logs, setLogs] = useState<string[]>([])
   const [result, setResult] = useState<any>(null)
+  const [progress, setProgress] = useState(0)
   const logsEndRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => { api.getConfig().then((cfg: any) => { if (cfg.defaultModel) setModel(cfg.defaultModel) }) }, [])
-  useEffect(() => { logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [logs])
+  useEffect(() => {
+    api.getConfig().then((cfg: any) => { if (cfg.defaultModel) setModel(cfg.defaultModel) })
+  }, [])
+
+  useEffect(() => {
+    logsEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [logs])
 
   async function startAudit() {
     if (!target.trim()) return
     setRunning(true)
     setResult(null)
     setLogs([])
-    setProgress('Initializing...')
+    setProgress(5)
 
     try {
-      const res = await api.triggerAudit(target, { depth, format, model, dryRun })
-      setProgress(`Audit started: ${res.id}`)
-      setLogs([...logs, `[${new Date().toISOString()}] Audit triggered for ${target}`])
-      
+      const res = await api.triggerAudit(target, { depth, format, model })
+      addLog(`Audit initiated: ${res.id}`)
+      addLog(`Target: ${target} | Model: ${model} | Depth: ${depth}`)
+
       // Poll for completion
       const poll = setInterval(async () => {
         try {
           const data = await api.getAudit(res.id)
-          setProgress(`Phase: ${data.investigation?.phase ?? 'running'}`)
+          const phase = data.investigation?.phase ?? 'running'
+          setProgress(Math.min(95, 5 + Math.floor(data.iterations ?? 0) * 1.8))
+          addLog(`Phase: ${phase.replace(/_/g, ' ')}`)
           const findings = data.investigation?.findings ?? []
-          setLogs(prev => [...prev, `[${new Date().toISOString()}] ${findings.length} findings so far...`])
+          if (findings.length > (logs.filter(l => l.includes('findings')).length)) {
+            addLog(`→ ${findings.length} finding${findings.length !== 1 ? 's' : ''} detected`)
+          }
           if (data.investigation?.status === 'completed') {
             clearInterval(poll)
+            setProgress(100)
             setResult(data)
-            setProgress('Completed')
-            setLogs(prev => [...prev, `[${new Date().toISOString()}] ✓ Investigation complete`])
-            setTimeout(() => navigate('/findings'), 1500)
+            addLog('✓ Investigation complete')
+            setTimeout(() => navigate('/findings'), 1200)
           }
         } catch {
           clearInterval(poll)
-          setLogs(prev => [...prev, '[poll] Error checking status'])
+          addLog('Error checking status')
         }
-      }, 3000)
-      setTimeout(() => clearInterval(poll), 120000) // max 2 min poll
+      }, 2500)
+      setTimeout(() => clearInterval(poll), 90000)
     } catch (err) {
-      setProgress('Failed')
-      setLogs(prev => [...prev, `[${new Date().toISOString()}] ERROR: ${err instanceof Error ? err.message : String(err)}`])
+      addLog(`ERROR: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setRunning(false)
     }
   }
 
+  function addLog(msg: string) {
+    const time = new Date().toLocaleTimeString()
+    setLogs(prev => [...prev, `[${time}] ${msg}`])
+  }
+
   return (
-    <div className="fade-in">
-      <div className="page-header">
+    <div className="space-y-6 fade-in">
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="icon" onClick={() => navigate('/')} className="rounded-xl">
+          <ArrowLeft className="size-4" />
+        </Button>
         <div>
-          <div className="page-title">New Audit</div>
-          <div className="page-subtitle">Configure and run a security investigation</div>
+          <h1 className="text-2xl font-bold tracking-tight">New Audit</h1>
+          <p className="text-sm text-muted-foreground">Configure and run a security investigation</p>
         </div>
       </div>
-      <div className="page-body">
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-          {/* Config */}
-          <div>
-            <div className="card" style={{ marginBottom: 16 }}>
-              <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 16, color: 'var(--gold)' }}>◈ Configuration</h3>
-              
-              <div className="field" style={{ marginBottom: 12 }}>
-                <label className="field-label">Target Path or Project Name</label>
-                <input className="input" placeholder="./my-project or profile-name" value={target} onChange={e => setTarget(e.target.value)} />
-              </div>
 
-              <div className="card-grid card-grid-2" style={{ marginBottom: 12 }}>
-                <div className="field">
-                  <label className="field-label">Depth</label>
-                  <select className="select" value={depth} onChange={e => setDepth(e.target.value as any)}>
-                    <option value="quick">Quick (20 iterations)</option>
-                    <option value="full">Full (50 iterations)</option>
-                  </select>
-                </div>
-                <div className="field">
-                  <label className="field-label">Report Format</label>
-                  <select className="select" value={format} onChange={e => setFormat(e.target.value)}>
-                    <option value="json">JSON</option>
-                    <option value="sarif">SARIF 2.1</option>
-                    <option value="markdown">Markdown</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="card-grid card-grid-2" style={{ marginBottom: 16 }}>
-                <div className="field">
-                  <label className="field-label">AI Model</label>
-                  <select className="select" value={model} onChange={e => setModel(e.target.value)}>
-                    <option value="mock">Mock (deterministic)</option>
-                    <option value="openai">OpenAI (GPT-4o)</option>
-                    <option value="anthropic">Anthropic (Claude)</option>
-                    <option value="groq">Groq (Llama)</option>
-                    <option value="ollama">Ollama (local)</option>
-                  </select>
-                </div>
-                <div className="field">
-                  <label className="field-label">Mode</label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 8 }}>
-                    <input type="checkbox" id="dryrun" checked={dryRun} onChange={e => setDryRun(e.target.checked)} />
-                    <label htmlFor="dryrun" style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Dry run (no tools executed)</label>
-                  </div>
-                </div>
-              </div>
-
-              <button className="btn btn-gold" style={{ width: '100%', justifyContent: 'center', padding: '10px 16px' }} onClick={startAudit} disabled={running || !target.trim()}>
-                {running ? <><span className="spinner">⟳</span> Running...</> : '▶ Start Investigation'}
-              </button>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Config */}
+        <Card className="glass">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Terminal className="size-4 text-gold-500" /> Configuration
+            </CardTitle>
+            <CardDescription>Target project and investigation parameters</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Target Path or Profile Name</label>
+              <Input
+                placeholder="./my-project or profile-name"
+                value={target}
+                onChange={e => setTarget(e.target.value)}
+                disabled={running}
+                className="rounded-xl"
+              />
             </div>
 
-            <div className="alert alert-info">
-              <span>ℹ️</span>
-              <div>
-                <strong>Quick mode</strong> runs 20 iterations for fast results.<br/>
-                <strong>Full mode</strong> runs 50 iterations for thorough analysis.<br/>
-                <strong>Dry run</strong> plans actions without executing tools.
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Depth</label>
+                <select value={depth} onChange={e => setDepth(e.target.value as any)} disabled={running}
+                  className="w-full h-9 rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/40">
+                  <option value="quick">Quick (20 iters)</option>
+                  <option value="full">Full (50 iters)</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Format</label>
+                <select value={format} onChange={e => setFormat(e.target.value)} disabled={running}
+                  className="w-full h-9 rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/40">
+                  <option value="json">JSON</option>
+                  <option value="sarif">SARIF 2.1</option>
+                  <option value="markdown">Markdown</option>
+                </select>
               </div>
             </div>
-          </div>
 
-          {/* Live Output */}
-          <div className="card" style={{ fontFamily: 'monospace', fontSize: 12, minHeight: 300 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--gold)' }}>◈ Live Output</h3>
-              {running && <span style={{ color: 'var(--success)' }}><span className="spinner">⟳</span> Running</span>}
-              {result && <span style={{ color: 'var(--success)' }}>✓ Complete</span>}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">AI Model</label>
+              <select value={model} onChange={e => setModel(e.target.value)} disabled={running}
+                className="w-full h-9 rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/40">
+                <option value="mock">Mock (deterministic testing)</option>
+                <option value="openai">OpenAI GPT-4o</option>
+                <option value="anthropic">Anthropic Claude</option>
+                <option value="groq">Groq Llama</option>
+                <option value="ollama">Ollama (local)</option>
+              </select>
             </div>
-            <div style={{ background: 'var(--bg)', borderRadius: 4, padding: 12, maxHeight: 400, overflowY: 'auto', lineHeight: 1.6 }}>
+
+            <Button
+              onClick={startAudit}
+              disabled={running || !target.trim()}
+              variant="gold"
+              className="w-full gap-2 rounded-xl h-11"
+            >
+              {running ? <><Loader2 className="size-4 animate-spin" /> Investigating...</> : <><Play className="size-4" /> Start Investigation</>}
+            </Button>
+
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-gold-500/5 border border-gold-500/10">
+              <Info className="size-4 text-gold-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                <strong className="text-foreground">Quick mode</strong> runs 20 iterations for fast results.<br />
+                <strong className="text-foreground">Full mode</strong> runs 50 iterations for thorough analysis.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Live output */}
+        <Card className="glass">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Terminal className="size-4 text-gold-500" /> Live Output
+              {running && <span className="ml-auto flex items-center gap-1.5 text-xs text-green-500"><span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Running</span>}
+              {result && <span className="ml-auto flex items-center gap-1.5 text-xs text-green-500"><CheckCircle2 className="size-3" /> Complete</span>}
+            </CardTitle>
+            <CardDescription>Real-time investigation progress</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="bg-muted/50 rounded-xl p-4 font-mono text-xs space-y-1 min-h-48 max-h-80 overflow-y-auto">
               {logs.length === 0 ? (
-                <span style={{ color: 'var(--text-muted)' }}>Waiting to start...</span>
+                <p className="text-muted-foreground italic">Ready to start investigation...</p>
               ) : logs.map((log, i) => (
-                <div key={i} style={{ color: log.includes('ERROR') ? 'var(--error)' : log.includes('✓') ? 'var(--success)' : 'var(--text-secondary)' }}>
+                <div key={i} className={`${
+                  log.includes('ERROR') ? 'text-red-400' :
+                  log.includes('✓') ? 'text-green-400' :
+                  log.includes('Phase') ? 'text-gold-400' :
+                  'text-muted-foreground'
+                }`}>
                   {log}
                 </div>
               ))}
               <div ref={logsEndRef} />
             </div>
-            {progress && (
-              <div style={{ marginTop: 12 }}>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>{progress}</div>
-                <div className="progress-bar">
-                  <div className="progress-fill progress-gold" style={{ width: running ? `${Math.min(90, (logs.length % 20) * 5)}%` : '100%' }} />
+
+            {running && (
+              <div className="mt-4 space-y-2">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Progress</span>
+                  <span>{progress}%</span>
+                </div>
+                <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-gold-400 to-gold-600 rounded-full transition-all duration-500"
+                    style={{ width: `${progress}%` }}
+                  />
                 </div>
               </div>
             )}
-          </div>
-        </div>
+
+            {result && (
+              <div className="mt-4 p-4 rounded-xl bg-green-500/10 border border-green-500/20">
+                <div className="flex items-center gap-2 text-green-500 font-medium text-sm">
+                  <CheckCircle2 className="size-4" /> Investigation Complete
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {(result.summary?.criticalCount ?? 0) + (result.summary?.highCount ?? 0)} critical/high findings · Score: {result.summary?.overallScore ?? '?'}/100
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

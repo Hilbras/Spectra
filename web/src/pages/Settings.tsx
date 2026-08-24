@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react'
-import { api } from '../hooks/useApi'
-import { useTheme } from '../hooks/useTheme'
+import { Palette, Key, Globe, Database } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { useTheme } from '@/components/theme-provider'
+import { api } from '@/hooks/useApi'
 
 export function Settings() {
-  const { themeName, setTheme } = useTheme()
+  const { theme, setTheme } = useTheme()
   const [config, setConfig] = useState<any>({})
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     api.getConfig().then(setConfig).catch(() => {})
@@ -18,80 +23,107 @@ export function Settings() {
   }
 
   return (
-    <div className="fade-in">
-      <div className="page-header">
-        <div>
-          <div className="page-title">Settings</div>
-          <div className="page-subtitle">Configure Spectra preferences</div>
-        </div>
+    <div className="space-y-6 fade-in">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+        <p className="text-sm text-muted-foreground">Configure Spectra preferences and integrations</p>
       </div>
-      <div className="page-body">
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-          {/* Appearance */}
-          <div className="card">
-            <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 16, color: 'var(--gold)' }}>◈ Appearance</h3>
-            <div className="field" style={{ marginBottom: 12 }}>
-              <label className="field-label">Theme</label>
-              <select className="select" value={themeName} onChange={e => setTheme(e.target.value as any)}>
-                <option value="dark">Dark (Gold accent)</option>
-                <option value="light">Light (Gold accent)</option>
-              </select>
-            </div>
-            <div className="alert alert-gold" style={{ fontSize: 12 }}>
-              Gold is Spectra's signature accent color, used on borders, headers, and key UI elements.
-            </div>
-          </div>
 
-          {/* Default Behavior */}
-          <div className="card">
-            <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 16, color: 'var(--gold)' }}>◈ Defaults</h3>
-            <div className="field" style={{ marginBottom: 12 }}>
-              <label className="field-label">Default Model</label>
-              <select className="select" value={config.defaultModel ?? 'mock'} onChange={e => save('defaultModel', e.target.value)}>
-                <option value="mock">Mock (offline testing)</option>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Appearance */}
+        <Card className="glass">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Palette className="size-5 text-gold-500" />
+              <CardTitle className="text-base">Appearance</CardTitle>
+            </div>
+            <CardDescription>Customize the visual theme</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-3">
+              {(['dark', 'light'] as const).map((t) => (
+                <button key={t} onClick={() => setTheme(t)}
+                  className={`flex-1 p-4 rounded-xl border-2 transition-all duration-200 ${
+                    theme === t ? 'border-gold-500 bg-gold-500/10' : 'border-border hover:border-gold-500/40'
+                  }`}>
+                  <div className={`w-8 h-8 rounded-lg mx-auto mb-2 ${t === 'dark' ? 'bg-gray-900' : 'bg-white border border-gray-200'}`} />
+                  <span className="text-sm font-medium capitalize">{t} theme</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground text-center">
+              Gold accent color is used throughout the interface.
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Defaults */}
+        <Card className="glass">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Database className="size-5 text-gold-500" />
+              <CardTitle className="text-base">Default Behavior</CardTitle>
+            </div>
+            <CardDescription>Default settings for new audits</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Default AI Model</label>
+              <select value={config.defaultModel ?? 'mock'} onChange={e => save('defaultModel', e.target.value)}
+                className="w-full h-9 rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/40">
+                <option value="mock">Mock (testing)</option>
                 <option value="openai">OpenAI GPT-4o</option>
                 <option value="anthropic">Anthropic Claude</option>
-                <option value="groq">Groq (Llama)</option>
+                <option value="groq">Groq Llama</option>
                 <option value="ollama">Ollama (local)</option>
               </select>
             </div>
-            <div className="field" style={{ marginBottom: 12 }}>
-              <label className="field-label">Default Report Format</label>
-              <select className="select" value={config.defaultFormat ?? 'json'} onChange={e => save('defaultFormat', e.target.value)}>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Report Format</label>
+              <select value={config.defaultFormat ?? 'json'} onChange={e => save('defaultFormat', e.target.value)}
+                className="w-full h-9 rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-gold-500/40">
                 <option value="json">JSON</option>
                 <option value="sarif">SARIF 2.1</option>
                 <option value="markdown">Markdown</option>
               </select>
             </div>
-            <div className="field">
-              <label className="field-label">Auto-Approve Threshold</label>
-              <select className="select" value={config.autoApproveThreshold ?? 'medium'} onChange={e => save('autoApproveThreshold', e.target.value)}>
-                <option value="low">Low (approve all)</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="critical">Critical only</option>
-              </select>
-            </div>
-          </div>
+          </CardContent>
+        </Card>
 
-          {/* API Keys */}
-          <div className="card" style={{ gridColumn: '1 / -1' }}>
-            <h3 style={{ fontSize: 13, fontWeight: 600, marginBottom: 16, color: 'var(--gold)' }}>◈ API Keys</h3>
-            <div className="card-grid card-grid-2">
+        {/* API Keys */}
+        <Card className="glass lg:col-span-2">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Key className="size-5 text-gold-500" />
+              <CardTitle className="text-base">API Keys</CardTitle>
+            </div>
+            <CardDescription>Configure AI provider credentials</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {['openai', 'anthropic', 'groq', 'ollama'].map((provider) => {
-                const hasKey = !!(config.apiKeys?.[provider])
+                const hasKey = !!config.apiKeys?.[provider]
                 return (
-                  <div key={provider} className="field">
-                    <label className="field-label">{provider.charAt(0).toUpperCase() + provider.slice(1)}</label>
-                    <input className="input" type="password" placeholder={hasKey ? '••••••••••••' : 'Enter API key...'} defaultValue={hasKey ? '' : ''} />
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{hasKey ? '✓ Configured' : 'Not set — use mock model'}</span>
+                  <div key={provider} className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Globe className="size-3.5 text-muted-foreground" />
+                      <label className="text-sm font-medium capitalize">{provider}</label>
+                      {hasKey && <span className="text-xs text-green-500">✓</span>}
+                    </div>
+                    <Input
+                      type="password"
+                      placeholder={hasKey ? '••••••••••••' : `Enter ${provider} API key...`}
+                      className="rounded-xl"
+                    />
                   </div>
                 )
               })}
             </div>
-            <button className="btn btn-primary btn-sm" style={{ marginTop: 12 }} onClick={() => save('apiKeys', config.apiKeys ?? {})}>Save Keys</button>
-          </div>
-        </div>
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => save('apiKeys', config.apiKeys ?? {})}>
+              {saving ? 'Saving...' : 'Save API Keys'}
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

@@ -1,11 +1,10 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
-import './App.css'
+import './index.css'
 
-// Apply saved theme
 const saved = localStorage.getItem('spectra-theme')
-document.documentElement.setAttribute('data-theme', saved === 'light' ? 'light' : 'dark')
+document.documentElement.classList.toggle('dark', saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches))
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
