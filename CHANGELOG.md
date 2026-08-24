@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.6] — 2026-08-24
+
+### Added
+
+- **Interactive Terminal UI** (`spectra ui`)
+  - Full keyboard-navigable TUI powered by Ink + React
+  - Screens: Main Menu · Audit · Findings · Projects · Settings
+  - Navigate with ↑/↓ arrows, Enter to select, Esc to go back
+  - Run with: `spectra ui` or `npm run ui`
+
+- **Production CLI** (full rewrite)
+  - 7 commands: `audit`, `report`, `findings`, `projects`, `config`, `init`, `version`
+  - Short flags: `-n/--dry-run`, `-f/--format`, `-d/--depth`, `-o/--output`, `-q/--quiet`, `-m/--model`
+  - CI-friendly exit codes: `0` = no high/critical findings, `1` = findings present
+  - SARIF 2.1, JSON, and Markdown report output to stdout or file
+
+- **Persistent Configuration**
+  - `~/.spectra/config.json` stores user preferences
+  - Project profiles with last-audit tracking
+  - Default model, report format, and approval threshold settings
+
+- **SDK Type Shims**
+  - Local type definitions for Message, Tool, StreamChunk, ToolParameters, HilbrasClient
+  - Zero runtime dependency on @hilbras/sdk — fully standalone package
+
+### Improved
+
+- Phase handlers now strictly respect tool registry phase permissions
+- Policy errors eliminated across all 20 investigation phases
+- All 5 benchmark fixtures audit cleanly with zero errors
+- Package ships as truly standalone (`@hilbras/sdk` removed from dependencies)
+
+### Changed
+
+- Package is now independently publishable — no monorepo build order required
+- CLI entry point moved to `bin/spectra` (referenced in package.json `bin`)
+- Report generation integrated into CLI audit command (no separate step needed)
+
+### Fixed
+
+- Tool dispatch now respects phase availability for every registered tool
+- `filesystem.list` added to `ATTACK_SURFACE_MAPPING` allowed phases
+- Fixed TypeScript strict mode errors in phase handlers (null-safe casts)
+
+---
+
 ## [0.0.5] — 2026-08-23
 
 ### Added
@@ -68,6 +114,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Renamed** package from `@hilbras/security` → `@hilbras/spectra`, CLI from `hilbras-security` → `spectra`
-
 - Version set to 0.0.5
 - All internal product-name references updated to "Hilbras Spectra"
