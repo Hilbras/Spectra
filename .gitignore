@@ -31,3 +31,6 @@ npm-debug.log*
 tmp/
 temp/
 .helix/
+
+# Spectra audit data
+.spectra/

@@ -1,0 +1,11 @@
+#!/usr/bin/env node
+/**
+ * Hilbras Spectra CLI — Entry Point
+ * 
+ * This script is the actual binary referenced by package.json "bin".
+ * It bootstraps the TypeScript CLI by resolving the dist path.
+ */
+import("../dist/cli/index.js").catch((err) => {
+  console.error("Failed to start spectra:", err);
+  process.exit(1);
+});
