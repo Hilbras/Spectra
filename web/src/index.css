@@ -1,7 +1,13 @@
 @import "tailwindcss";
 
-/* Hilbras Spectra — Design Tokens (matching Studio quality) */
+/*
+ * Hilbras Spectra — Design Tokens
+ * Matches Hilbras Studio: warm neutrals + gold as single accent.
+ * Semantic colors are derived from the gold/neutral family for consistency.
+ */
+
 :root {
+  /* ── Neutrals ── */
   --background: #fafaf7;
   --foreground: #1c1a16;
   --card: #ffffff;
@@ -14,6 +20,7 @@
   --input: #e6e3da;
   --ring: #c9a14a;
 
+  /* ── Gold Scale ── */
   --gold-50: #fffdf6;
   --gold-100: #fff6d6;
   --gold-200: #ffe9a8;
@@ -25,10 +32,34 @@
   --gold-800: #6e4d17;
   --gold-900: #4a3610;
 
-  --radius: 0.75rem;
+  /* ── Semantic Colors (light) ──
+     Derive from gold/warm family to stay on-brand.
+     Critical → deep rose/red    High → orange        Medium → amber
+     Success → emerald/green     Info → blue          Warning → amber
+  */
+  --critical: #dc2626;
+  --critical-fg: #fff;
+  --high: #ea580c;
+  --high-fg: #fff;
+  --medium: #d97706;
+  --medium-fg: #fff;
+  --low: #2563eb;
+  --low-fg: #fff;
+  --success: #16a34a;
+  --success-fg: #fff;
+  --warning: #ca8a04;
+  --warning-fg: #fff;
+  --error: #dc2626;
+  --error-fg: #fff;
+  --info: #0284c7;
+  --info-fg: #fff;
+
+  /* ── Glass ── */
   --glass-bg: rgba(255, 255, 255, 0.72);
   --glass-border: rgba(255, 255, 255, 0.18);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+
+  --radius: 0.75rem;
 }
 
 .dark {
@@ -55,12 +86,33 @@
   --gold-800: #f0c96a;
   --gold-900: #fce9a8;
 
+  /* ── Semantic Colors (dark) ──
+     Slightly lighter versions for dark background readability.
+  */
+  --critical: #f87171;
+  --critical-fg: #1c1a16;
+  --high: #fb923c;
+  --high-fg: #1c1a16;
+  --medium: #fbbf24;
+  --medium-fg: #1c1a16;
+  --low: #60a5fa;
+  --low-fg: #1c1a16;
+  --success: #4ade80;
+  --success-fg: #1c1a16;
+  --warning: #facc15;
+  --warning-fg: #1c1a16;
+  --error: #f87171;
+  --error-fg: #1c1a16;
+  --info: #38bdf8;
+  --info-fg: #1c1a16;
+
   --glass-bg: rgba(21, 18, 12, 0.72);
   --glass-border: rgba(255, 255, 255, 0.06);
   --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
 @theme inline {
+  /* ── Neutrals ── */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -72,6 +124,8 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  /* ── Gold Scale ── */
   --color-gold-50: var(--gold-50);
   --color-gold-100: var(--gold-100);
   --color-gold-200: var(--gold-200);
@@ -82,9 +136,27 @@
   --color-gold-700: var(--gold-700);
   --color-gold-800: var(--gold-800);
   --color-gold-900: var(--gold-900);
+
+  /* ── Semantic ── */
+  --color-critical: var(--critical);
+  --color-critical-fg: var(--critical-fg);
+  --color-high: var(--high);
+  --color-high-fg: var(--high-fg);
+  --color-medium: var(--medium);
+  --color-medium-fg: var(--medium-fg);
+  --color-low: var(--low);
+  --color-low-fg: var(--low-fg);
+  --color-success: var(--success);
+  --color-success-fg: var(--success-fg);
+  --color-warning: var(--warning);
+  --color-warning-fg: var(--warning-fg);
+  --color-error: var(--error);
+  --color-error-fg: var(--error-fg);
+  --color-info: var(--info);
+  --color-info-fg: var(--info-fg);
 }
 
-/* Base */
+/* ── Base ─────────────────────────────────────────────────── */
 @layer base {
   html { scroll-behavior: smooth; }
   body {
@@ -97,11 +169,12 @@
   .text-foreground, .text-muted-foreground,
   .border-border, .glass,
   input, button, select, textarea {
-    transition: background-color 0.4s ease, color 0.3s ease, border-color 0.4s ease, box-shadow 0.4s ease;
+    transition: background-color 0.4s ease, color 0.3s ease,
+                border-color 0.4s ease, box-shadow 0.4s ease;
   }
 }
 
-/* Utilities */
+/* ── Utilities ────────────────────────────────────────────── */
 @layer utilities {
   .glass {
     background: var(--glass-bg);
@@ -121,29 +194,28 @@
   .stagger-in > *:nth-child(3) { animation-delay: 100ms; }
   .stagger-in > *:nth-child(4) { animation-delay: 150ms; }
   .stagger-in > *:nth-child(5) { animation-delay: 200ms; }
+  .stagger-in > *:nth-child(6) { animation-delay: 250ms; }
+  .stagger-in > *:nth-child(7) { animation-delay: 300ms; }
+  .stagger-in > *:nth-child(8) { animation-delay: 350ms; }
 }
 
+/* ── Keyframes ────────────────────────────────────────────── */
 @keyframes fadeSlideUp {
   from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
+  0%   { background-position: -200% 0; }
   100% { background-position: 200% 0; }
 }
 
 @keyframes pulse-gold {
   0%, 100% { box-shadow: 0 0 0 0 rgba(218, 154, 46, 0.3); }
-  50% { box-shadow: 0 0 0 8px rgba(218, 154, 46, 0); }
+  50%      { box-shadow: 0 0 0 8px rgba(218, 154, 46, 0); }
 }
 
-@keyframes spin-slow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* Scrollbar */
+/* ── Scrollbar ────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }

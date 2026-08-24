@@ -11,7 +11,7 @@ const buttonVariants = cva(
         gold: 'bg-gradient-to-r from-gold-400 to-gold-600 text-black hover:from-gold-500 hover:to-gold-700 shadow-lg shadow-gold-500/25',
         ghost: 'hover:bg-accent hover:text-foreground',
         outline: 'border border-border bg-background hover:bg-accent hover:text-foreground',
-        destructive: 'bg-red-500 text-white hover:bg-red-600',
+        destructive: 'bg-error text-error-fg hover:bg-error/90 shadow-md shadow-error/20',
         secondary: 'bg-muted text-muted-foreground hover:bg-muted/80',
         glass: 'glass text-foreground hover:bg-white/20 dark:hover:bg-white/5',
       },

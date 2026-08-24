@@ -198,8 +198,8 @@ export function Landing() {
                   )}
 
                   {error && (
-                    <p className="text-xs text-red-500 flex items-center gap-1.5">
-                      <span className="w-1 h-1 rounded-full bg-red-500 shrink-0" />
+                    <p className="text-xs text-error flex items-center gap-1.5">
+                      <span className="w-1 h-1 rounded-full bg-error shrink-0" />
                       {error}
                     </p>
                   )}
