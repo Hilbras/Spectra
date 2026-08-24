@@ -6,7 +6,7 @@
  * AI tool request before it reaches the handler.
  */
 
-import type { ToolParameters } from "@hilbras/sdk";
+import type { ToolParameters } from "../types/sdk-shims.js";
 import type { ToolDefinition } from "../domain/types.js";
 
 export const TOOL_REGISTRY = new Map<string, ToolDefinition>();

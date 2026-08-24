@@ -5,7 +5,7 @@
  * Allows swapping production LLM for deterministic test models.
  */
 
-import type { Message } from "@hilbras/sdk";
+import type { Message } from "../types/sdk-shims.js";
 import type { InvestigationOutput } from "./decision-schema.js";
 
 export interface ModelAdapter {

@@ -56,7 +56,6 @@
   },
   "homepage": "https://github.com/Hilbras/spectra",
   "dependencies": {
-    "@hilbras/sdk": "file:../SDK",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/auto-instrumentations-node": "^0.78.0",
     "@opentelemetry/sdk-node": "^0.220.0",
@@ -85,7 +84,8 @@
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
-    ".github"
+    ".github",
+    "bin"
   ],
   "publishConfig": {
     "access": "public"

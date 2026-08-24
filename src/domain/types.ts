@@ -5,7 +5,7 @@
  * tools, policies, and reports.
  */
 
-import type { ToolParameters } from "@hilbras/sdk";
+import type { ToolParameters } from "../types/sdk-shims.js";
 
 // ─── IDs ────────────────────────────────────────────────────────────────────
 

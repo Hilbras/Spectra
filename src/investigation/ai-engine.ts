@@ -8,10 +8,10 @@
  * Uses @hilbras/sdk for model/provider abstraction.
  */
 
-import type { HilbrasClient } from "@hilbras/sdk";
-import type { Message } from "@hilbras/sdk";
-import type { StreamChunk } from "@hilbras/sdk";
-import type { Tool } from "@hilbras/sdk";
+import type { HilbrasClient } from "../types/sdk-shims.js";
+import type { Message } from "../types/sdk-shims.js";
+import type { StreamChunk } from "../types/sdk-shims.js";
+import type { Tool } from "../types/sdk-shims.js";
 import type {
   Phase,
   Hypothesis,
