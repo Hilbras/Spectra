@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Shield, Upload, Link as LinkIcon, FolderGit2, Bug, Activity } from 'lucide-react'
 import { api } from '@/hooks/useApi'
 import { Button } from '@/components/ui/button'
+import { ThemeToggle } from '@/components/theme-toggle'
 
 export function Landing() {
   const navigate = useNavigate()
@@ -50,6 +51,7 @@ export function Landing() {
                 {health?.status === 'ok' ? 'System Ready' : 'Initializing...'}
               </span>
             </nav>
+            <ThemeToggle />
             <Button variant="ghost" size="sm" className="rounded-xl text-xs" onClick={() => navigate('/settings')}>
               Settings
             </Button>
