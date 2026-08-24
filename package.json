@@ -36,14 +36,14 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "concurrently \"npm run web:dev\" \"npm run --prefix web dev\"",
+    "dev": "concurrently -n api,web \"tsx watch src/web/server.ts\" \"npm run --prefix web dev\"",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint src/",
     "clean": "rm -rf dist",
     "ui": "tsx src/cli/ui.tsx",
-    "web:dev": "concurrently \"npm run build && node dist/web/server.ts\" \"npm run --prefix web dev\"",
+    "web:dev": "vite",
     "web:build": "npm run build && cd web && npm run build",
     "web:start": "node dist/web/server.js"
   },
