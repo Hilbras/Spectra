@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom'
+import { AnimatePresence, motion } from 'framer-motion'
 import { Sidebar } from './components/sidebar'
 import { ThemeProvider } from './components/theme-provider'
 import { ThemeToggle } from './components/theme-toggle'
@@ -15,6 +16,14 @@ import { Benchmarks } from './pages/Benchmarks'
 import { Landing } from './pages/Landing'
 
 const APP_ROUTES = ['/audit', '/findings', '/history', '/projects', '/settings', '/health', '/benchmarks']
+
+// Page transition config for app routes
+const pageTransition = {
+  initial: { opacity: 0, y: 8 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -8 },
+  transition: { duration: 0.2, ease: 'easeInOut' },
+}
 
 function Layout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false)
@@ -44,16 +53,24 @@ function Layout({ children }: { children: React.ReactNode }) {
               </div>
             </header>
             <main className="flex-1 overflow-y-auto">
-              <div className="p-6 lg:p-8 max-w-7xl mx-auto">
-                {children}
-              </div>
+              <AnimatePresence mode="wait">
+                <motion.div key={location.pathname} {...pageTransition}>
+                  <div className="p-6 lg:p-8 max-w-7xl mx-auto">
+                    {children}
+                  </div>
+                </motion.div>
+              </AnimatePresence>
             </main>
           </div>
         </>
       )}
       {!isApp && (
-        <div className="w-full h-full">
-          {children}
+        <div className="w-full h-full overflow-y-auto">
+          <AnimatePresence mode="wait">
+            <motion.div key={location.pathname} {...pageTransition}>
+              {children}
+            </motion.div>
+          </AnimatePresence>
         </div>
       )}
     </div>

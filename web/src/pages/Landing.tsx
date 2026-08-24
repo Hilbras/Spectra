@@ -33,7 +33,7 @@ export function Landing() {
   }
 
   return (
-    <div className="relative flex flex-col min-h-screen overflow-hidden">
+    <div className="relative flex flex-col min-h-full">
       {/* Animated background gradient */}
       <div className="fixed inset-0 z-0">
         <div className="absolute inset-0 bg-background" />
