@@ -48,7 +48,7 @@ export function Landing() {
 
       {/* Navbar */}
       <header className="fixed top-0 inset-x-0 z-50 px-4 py-4 sm:px-6">
-        <div className="mx-auto max-w-4xl">
+        <div className="mx-auto max-w-7xl">
           <div className="glass rounded-2xl flex items-center justify-between h-13 px-5 border border-border/40">
             <div className="flex items-center gap-2.5">
               <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-gold-400 to-gold-600 shadow-md shadow-gold-500/20">
@@ -93,7 +93,7 @@ export function Landing() {
           </span>
         </h1>
 
-        <p className="mt-5 text-base sm:text-lg text-muted-foreground text-center max-w-lg leading-relaxed fade-in" style={{ animationDelay: '0.2s' }}>
+        <p className="mt-5 text-base sm:text-lg text-muted-foreground text-center max-w-2xl leading-relaxed fade-in" style={{ animationDelay: '0.2s' }}>
           Hilbras Spectra uses AI to investigate dependencies, attack surfaces, and security flaws. Connect your project and get actionable results.
         </p>
 
@@ -124,7 +124,7 @@ export function Landing() {
         </div>
 
         {/* Input Area */}
-        <div className="mt-6 w-full max-w-xl fade-in" style={{ animationDelay: '0.4s' }}>
+        <div className="mt-6 w-full max-w-4xl fade-in" style={{ animationDelay: '0.4s' }}>
           <div className="glass rounded-2xl p-6 space-y-4 border border-border/40">
             {mode === 'link' ? (
               <>
