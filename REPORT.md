@@ -1,456 +1,190 @@
-# Spectra — Project Report
+# Spectra — Platform Report
 
 > Generated: 2026-09-18
-
-## What is Spectra?
-
-Spectra is a **modular, extensible, distributed security testing and analysis platform** for authorized targets. Written in Rust as a Cargo monorepo with 18 library crates and 3 application binaries.
-
-**Core workflow:** `UNDERSTAND → DISCOVER → OBSERVE → ANALYZE → DETECT → VERIFY → CORRELATE → EXPLAIN → REPORT → AUTOMATE`
+> Version: 0.1.1
+> License: AGPL-3.0
 
 ---
 
-## Architecture
+## Executive Summary
+
+Spectra is a modular, extensible, distributed security testing and analysis platform built in Rust. It is a 21-crate monorepo with 3 binary applications, covering the full security testing lifecycle from target management through vulnerability scanning to evidence-backed finding verification.
+
+| Metric | Value |
+|--------|-------|
+| **Version** | 0.1.1 |
+| **Language** | Rust (1.75+) |
+| **Workspace Crates** | 18 libraries + 3 apps = **21 total** |
+| **Lines of Rust** | **19,424** |
+| **Lines of SQL** | **577** (6 migrations) |
+| **Lines of Documentation** | **3,659** (11 doc files + 6 ADRs) |
+| **Total Files** | **111** |
+| **Tests** | **387** (all passing) |
+| **Public API Items** | **660** (145 structs, 58 enums, 11 traits, 446 functions) |
+| **API Endpoints** | **20** REST endpoints |
+| **CLI Commands** | **14** command groups |
+| **Database Tables** | **26** (across 6 migrations) |
+| **Unsafe Code** | **0** (`unsafe_code = "forbid"`) |
+| **Clippy Warnings** | **0** (`-D warnings`) |
+
+---
+
+## Architecture Overview
 
 ```
-                    core
-                     │
-        ┌────────────┼────────────┐
-        │            │            │
-     events       config      storage
-        │            │            │
-        └─────┬──────┘            │
-              │                   │
-           target                 │
-              │                   │
-    ┌─────────┼─────────┐        │
-    │         │         │        │
- network  fingerprint  crawler   │
-    │         │         │        │
-    └─────────┼─────────┘        │
-              │                  │
-           scanner               │
-              │                  │
-        ┌─────┼─────┐           │
-        │           │           │
-   findings    evidence         │
-        │           │           │
-        └─────┬─────┘           │
-              │                 │
-        verification            │
-              │                 │
-           engine ──────────────┘
-              │
-        ┌─────┼──────────┐
-        │     │          │
-   scheduler plugins  sandbox
+Core → Config → Target → Network/Fingerprint/Crawler → Scanner → Findings → Engine
+                              ↓                                    ↓
+                         Evidence ←──────────────────────── Verification
 ```
 
-Every arrow is a compile-time dependency. No circular dependencies. `core` has zero internal dependencies.
+### Design Principles
+
+| Principle | Implementation |
+|-----------|----------------|
+| **Modularity** | 18 library crates, each with a single responsibility |
+| **Extensibility** | Plugin system with Scanner, Transformer, Enricher capabilities |
+| **Scope Safety** | Every operation validated against target scope |
+| **Evidence-Based** | Every finding traceable to evidence with integrity hashes |
+| **Provider Agnostic** | Storage, AI, and execution providers abstracted via traits |
+| **Defense in Depth** | Input validation, rate limiting, sandboxing, audit logging |
+| **Observable** | 27 event types, OpenTelemetry integration |
+| **No Unsafe** | `unsafe_code = "forbid"` enforced at workspace level |
 
 ---
 
-## Workspace Structure
+## Crate Breakdown
 
-### 21 Members (18 crates + 3 apps)
+### Core Layer
+
+| Crate | Lines | Tests | Description |
+|-------|-------|-------|-------------|
+| **spectra-core** | 850 | 27 | `Id<T>` typed identifiers, `SpectraError` (18 variants), `Timestamp`, `Metadata`, `InputValidator`, `RateLimiter`, `ApiToken`, `constant_time_eq()` |
+| **spectra-config** | 551 | 23 | TOML configuration with 11 sections, env var overrides (`SPECTRA_<SECTION>__<KEY>`), file/env/CLI precedence |
+| **spectra-events** | 616 | 14 | Async broadcast event bus, 27 typed event variants across 8 categories, `EventHandler` trait, clone-safe multi-consumer |
+| **spectra-storage** | 776 | 5 | `Database`, `Transaction`, `SearchIndex` traits, `LocalStorage`, `PostgresDatabase`, `PostgresSearchIndex` |
+| **spectra-telemetry** | 86 | 4 | OpenTelemetry tracer initialization, log format configuration |
+
+### Target & Discovery Layer
+
+| Crate | Lines | Tests | Description |
+|-------|-------|-------|-------------|
+| **spectra-target** | 1,304 | 22 | Organization → Project → Target hierarchy, `TargetType` (Domain/URL/IP/CIDR), `ScopeEngine` with glob matching, `TargetService` CRUD |
+| **spectra-http** | 1,207 | 21 | `HttpClient` with builder, `Session` with cookies, `RetryPolicy` (exponential backoff), proxy support (HTTP/HTTPS/SOCKS5) |
+| **spectra-network** | 1,017 | 14 | `DnsResolver`, `PortScanner` (26 ports), `AssetGraph`, `NetworkEngine` orchestrating DNS + ports + subdomains |
+| **spectra-fingerprint** | 1,161 | 17 | `RuleDatabase` with 60+ rules across 9 categories, `FingerprintEngine` with 6 detection vectors, version extraction via regex |
+| **spectra-crawler** | 1,362 | 23 | BFS `UrlFrontier` with deduplication, `HtmlParser` for links/forms, `RobotsTxt` parser, `CrawlFilter` scope-aware filtering |
+
+### Scanning & Analysis Layer
+
+| Crate | Lines | Tests | Description |
+|-------|-------|-------|-------------|
+| **spectra-scanner** | 1,159 | 13 | `Scanner` async trait, **SQLi** (10 payloads, error+time blind), **XSS** (10 payloads, reflection checks), **DirSearch** (90+ paths) |
+| **spectra-findings** | 2,988 | 69 | `ManagedFinding` lifecycle, `ObservationEngine` (13 types, severity scoring), `DetectionEngine` (8 rules, AND/OR logic), `CorrelationEngine`, `ReportGenerator` |
+| **spectra-evidence** | 960 | 20 | `Evidence` with typed data, `EvidenceRedactor` (regex/JSON/header), `EvidenceIntegrity` (hash verification), `InMemoryEvidenceStore`, `EvidenceEngine` |
+| **spectra-verification** | 750 | 20 | `VerificationEngine` with auto-verify by source/severity, `InMemoryVerificationStore`, confidence scoring, `VerificationStrategy` |
+| **spectra-engine** | 621 | 10 | `ScanEngine` full pipeline: discover → crawl → fingerprint → scan → observe → verify → report, `ScanPlan`, `ScanJob`, `EngineMetrics` |
+
+### Platform Layer
+
+| Crate | Lines | Tests | Description |
+|-------|-------|-------|-------------|
+| **spectra-scheduler** | 821 | 25 | `InMemoryJobQueue` priority queue, retry with delay, max concurrency, cancel, `Job::builder()` |
+| **spectra-plugins** | 667 | 21 | `Plugin` trait with health checks, `PluginCapability` (6 variants), `PluginManager`, built-in: Echo, Transform, Counter, Aggregator |
+| **spectra-sandbox** | 696 | 26 | `LocalSandbox`, `ResourceLimits` (strict/permissive), `SandboxPolicy` (command allow/block), `AuditingSandbox` with audit log + metrics |
+
+### Applications
+
+| App | Lines | Description |
+|-----|-------|-------------|
+| **spectra-api** | 778 | Axum HTTP server with 20 REST endpoints, JSON error handling, AppState with all engines |
+| **spectra-cli** | 694 | Clap CLI with 14 command groups, colored output, subcommand parsing |
+| **spectra-worker** | 360 | Worker process with heartbeat, metrics (atomic counters), graceful shutdown, tokio::select! loop |
+
+---
+
+## Feature Matrix
+
+### Scanning Capabilities
+
+| Scanner | Payloads | Techniques | Parameters Tested |
+|---------|----------|------------|-------------------|
+| SQL Injection | 10 | Error-based, Time-based blind | 20 common param names |
+| XSS | 10 | Reflection, Header injection | All URL params, forms |
+| Directory Search | 90+ paths | 404 detection | 10 concurrent requests |
+
+### Fingerprinting Rules (60+)
+
+| Category | Example Technologies |
+|----------|---------------------|
+| Servers | Apache, Nginx, IIS, LiteSpeed |
+| Frameworks | Django, Rails, Laravel, Spring |
+| CMS | WordPress, Drupal, Joomla |
+| Languages | PHP, Python, Ruby, Java, .NET |
+| Databases | MySQL, PostgreSQL, MongoDB |
+| JavaScript | React, Angular, Vue, jQuery |
+| Security | Cloudflare, Akamai, WAF |
+| Analytics | Google Analytics, Matomo |
+| CDN | CloudFront, Fastly, Akamai |
+
+### Observation Types (13)
+
+| Type | Description |
+|------|-------------|
+| TechnologyDetected | Fingerprint match |
+| VersionDetected | Version string extraction |
+| VulnerabilityFound | Scanner detection |
+| MisconfigurationFound | Config issue |
+| InformationDisclosure | Data leak |
+| AuthenticationIssue | Auth problem |
+| AccessControlIssue | Authorization flaw |
+| InputValidationIssue | Injection flaw |
+| CryptographicIssue | Crypto weakness |
+| NetworkExposure | Open port/service |
+| ConfigurationDrift | Config change |
+| DependencyVulnerability | Vuln dependency |
+| CustomObservation | User-defined |
+
+### Detection Rules (8 Built-in)
+
+| Rule | Matcher | Logic |
+|------|---------|-------|
+| SQL Injection Detected | FieldContains("sql") + StatusCodeRange(500) | AND |
+| XSS Reflected | FieldContains("xss") + FieldContains("reflected") | AND |
+| Directory Listing | FieldEquals("directory_listing", "true") | Simple |
+| Sensitive File | FieldRegex("path", "/(admin|backup|config)") | Regex |
+| Weak SSL | FieldContains("ssl", "weak") | Simple |
+| Unknown Port | FieldExists("unknown_service") | Exists |
+| High Confidence | FieldContains("confidence", "high") | Simple |
+| Custom Rule | Configurable AND/OR composition | Composite |
+
+### Finding Lifecycle
 
 ```
-spectra/
-├── apps/
-│   ├── api/           Axum HTTP API server
-│   ├── cli/           Clap CLI application
-│   └── worker/        Distributed worker process
-│
-├── crates/
-│   ├── core/          Shared primitives, Id<T>, SpectraError, Timestamp, Metadata
-│   ├── events/        Async event bus with typed events
-│   ├── config/        Configuration management (spectra.toml, env vars)
-│   ├── storage/       Storage trait abstractions (Object, Database, Search)
-│   ├── telemetry/     OpenTelemetry + tracing integration
-│   ├── target/        Target and scope management with CRUD service
-│   ├── http/          Production HTTP client with retry, sessions, proxy
-│   ├── network/       DNS resolution, port scanning, asset discovery
-│   ├── fingerprint/   Technology detection (60+ rules, 9 categories)
-│   ├── crawler/       Web crawler with BFS, robots.txt, scope filtering
-│   ├── scanner/       Scanner framework + 3 built-in scanners
-│   ├── findings/      Finding lifecycle, correlation, reporting
-│   ├── evidence/      Evidence collection trait and types
-│   ├── verification/  Finding verification engine
-│   ├── engine/        Scan orchestration pipeline
-│   ├── scheduler/     Priority job queue with retry
-│   ├── plugins/       Plugin runtime and manager
-│   └── sandbox/       Process sandboxing with resource limits
-│
-├── migrations/        SQL schema (organizations, projects, targets, scopes, credentials)
-├── docs/              ARCHITECTURE.md (1,968+ lines)
-└── .github/           CI/CD (6-job GitHub Actions pipeline)
+New → Confirmed → Investigating → Fixed
+         ↓
+    False Positive
+         ↓
+      Duplicate
+         ↓
+      Accepted
 ```
 
----
+### Evidence Types (14)
 
-## Crate Reference
+HttpRequest, HttpResponse, Screenshot, Document, ScannerOutput, NetworkCapture, FileContent, DatabaseRecord, ApiResponse, LogEntry, ConfigurationFile, Certificate, WhoisRecord, DnsRecord
 
-### Layer 0: Foundation
+### Evidence Data Variants (5)
 
-#### `spectra-core` (447 lines)
-Core primitives with zero internal dependencies.
+Text, Binary, Url, Path, Json
 
-| Type | Name | Purpose |
-|------|------|---------|
-| struct | `Id<T>` | Typed identifier (UUID v4), generic over marker type |
-| struct | `Timestamp` | ISO 8601 timestamp wrapper |
-| struct | `Metadata` | Key-value metadata map |
-| enum | `SpectraError` | Application-wide error type |
-| enum | `IdError` | ID parsing/generation errors |
+### Redaction Policies (5 Patterns)
 
-Tests: 9
+HeaderName, CookieName, JsonField, Regex, Literal
 
 ---
 
-#### `spectra-config` (371 lines)
-Configuration management loading from `spectra.toml`, env vars, and defaults.
+## API Endpoints (20)
 
-| Type | Name | Purpose |
-|------|------|---------|
-| struct | `SpectraConfig` | Root config |
-| struct | `ApiConfig` | API server settings (host, port, CORS) |
-| struct | `DatabaseConfig` | PostgreSQL connection settings |
-| struct | `RedisConfig` | Redis connection settings |
-| struct | `StorageConfig` | Object storage backend settings |
-| struct | `NetworkConfig` | DNS servers, timeouts, proxy |
-| struct | `ScannerConfig` | Scanner concurrency, timeouts |
-| struct | `CrawlerConfig` | Crawl depth, pages, delay, user agent |
-| struct | `TelemetryConfig` | OTEL endpoint, service name |
-| enum | `Environment` | Development / Staging / Production |
-| enum | `LogLevel` | Trace / Debug / Info / Warn / Error |
-
-Tests: 2
-
----
-
-#### `spectra-events` (412 lines)
-Async channel-based event bus with typed events.
-
-| Type | Name | Purpose |
-|------|------|---------|
-| struct | `EventBus` | Multi-subscriber async event channel |
-| enum | `Event` | 14 event variants (ScanStarted, FindingDetected, etc.) |
-| enum | `EventError` | Bus errors |
-| trait | `EventHandler` | Async event handler interface |
-
-Tests: 3
-
----
-
-#### `spectra-storage` (259 lines)
-Storage trait abstractions with one concrete implementation.
-
-| Type | Name | Purpose |
-|------|------|---------|
-| trait | `Storage` | Object storage (put/get/delete/list/presign) |
-| trait | `Database` | SQL database (execute/query/transaction) |
-| trait | `Transaction` | Database transaction (execute/query/commit/rollback) |
-| trait | `SearchIndex` | Full-text search (index/search/delete/bulk_index) |
-| struct | `LocalStorage` | Filesystem-based object storage |
-| struct | `Row` | Database row representation |
-| struct | `SearchResult` | Search result with score |
-
-Tests: 1
-
----
-
-#### `spectra-telemetry` (58 lines)
-OpenTelemetry and tracing-subscriber initialization.
-
-Functions: `init_telemetry(config)` → sets up tracing + OTEL exporter.
-
-Tests: 1
-
----
-
-### Layer 1: Domain
-
-#### `spectra-target` (1,304 lines)
-Target and scope management with full CRUD service.
-
-| Type | Name | Purpose |
-|------|------|---------|
-| struct | `Target` | Scan target (domain, IP, URL, CIDR) |
-| struct | `TargetService` | Async CRUD service with scope checking |
-| struct | `Scope` | Allow/exclude rules |
-| struct | `ScopeRule` | Pattern + action (Allow/Deny) |
-| struct | `CredentialRef` | Reference to stored credential |
-| struct | `RateLimitConfig` | Requests per second / concurrent |
-| struct | `ExecutionLimits` | Timeout, max depth, max pages |
-| enum | `TargetType` | Domain / IpAddress / Url / CidrRange |
-| enum | `Environment` | Production / Staging / Development / Test |
-| enum | `ScopeAction` | Allow / Deny |
-| enum | `CredentialType` | Password / ApiKey / Token / Certificate |
-
-22 test functions covering scope matching, CRUD operations, and service logic.
-
----
-
-#### `spectra-http` (1,207 lines)
-Production-grade HTTP client with retry, sessions, and proxy support.
-
-| Type | Name | Purpose |
-|------|------|---------|
-| struct | `HttpClient` | HTTP client with retry policy |
-| struct | `Session` | Cookie-aware session manager |
-| struct | `Request` | HTTP request builder |
-| struct | `Response` | HTTP response with status, headers, body |
-| struct | `RetryPolicy` | Exponential backoff configuration |
-| struct | `HttpError` | Error classification (Network, Timeout, etc.) |
-
-Tests: 21 (includes wiremock-based integration tests)
-
----
-
-### Layer 2: Discovery
-
-#### `spectra-network` (1,017 lines)
-Network discovery engine: DNS → ports → subdomains → asset graph.
-
-| Type | Name | Purpose |
-|------|------|---------|
-| struct | `NetworkEngine` | Orchestrates DNS + port scan + subdomain enum |
-| struct | `DnsResolver` | DNS A record resolution via TCP |
-| struct | `PortScanner` | Concurrent TCP port scanner (26 common ports) |
-| struct | `AssetGraph` | Directed graph of discovered assets |
-| struct | `Asset` | Discovered entity (domain, IP, port, service) |
-| struct | `AssetEdge` | Relationship between assets |
-| struct | `DnsRecord` | DNS record (type, name, value, ttl) |
-| struct | `PortInfo` | Port state + service + banner |
-| enum | `AssetType` | Domain / Subdomain / IpAddress / Port / Service / Technology / ... |
-| enum | `AssetRelationship` | ResolvesTo / Hosts / Contains / ConnectsTo / ... |
-| enum | `PortState` | Open / Closed / Filtered / Timeout |
-| enum | `NetworkError` | DnsResolution / Timeout / Tls / Io |
-
-Tests: 14
-
----
-
-#### `spectra-fingerprint` (1,161 lines)
-Technology fingerprinting with 60+ detection rules across 9 categories.
-
-| Type | Name | Purpose |
-|------|------|---------|
-| struct | `FingerprintEngine` | Detection engine with rule database |
-| struct | `RuleDatabase` | 60+ rules (headers, HTML, JS, cookies, URLs, errors) |
-| struct | `Fingerprint` | Detection result with technologies + confidence |
-| struct | `Technology` | Detected technology (name, category, version, confidence) |
-| struct | `DetectionRule` | Pattern matching rule |
-| struct | `FingerprintInput` | Headers, HTML, URL, cookies |
-| enum | `TechnologyCategory` | WebServer / Framework / Cms / Database / Cdn / Waf / ... |
-| enum | `DetectionMethod` | HttpHeaders / HtmlContent / JavaScript / Cookies / ... |
-| enum | `FingerprintError` | Failed / UnsupportedTechnology / Network |
-
-Rule categories: Web servers (7), Frameworks (13), CMS (9), Analytics (7), CDN (6), WAF (5), Languages (5), Databases (4), Cache (3).
-
-Tests: 17
-
----
-
-#### `spectra-crawler` (1,362 lines)
-Web crawler with BFS traversal, robots.txt compliance, and scope filtering.
-
-| Type | Name | Purpose |
-|------|------|---------|
-| struct | `Crawler` | Main crawler engine |
-| struct | `CrawlResult` | Crawl output (pages, stats, errors) |
-| struct | `CrawledPage` | Single page data (URL, status, headers, content, links, forms) |
-| struct | `CrawlerConfig` | Max depth, pages, concurrency, delay, robots |
-| struct | `UrlFrontier` | BFS URL queue with dedup |
-| struct | `CrawlFilter` | Scope-aware URL filter |
-| struct | `CrawlPolicy` | Crawl rules and rate limits |
-| struct | `HtmlParser` | HTML link/form extraction |
-| struct | `RobotsTxt` | robots.txt parser |
-| struct | `ParsedForm` | Extracted form (action, method, fields) |
-| struct | `ParsedFormField` | Form field (name, type, value, required) |
-
-Tests: 23
-
----
-
-### Layer 3: Scanning
-
-#### `spectra-scanner` (1,159 lines)
-Scanner framework with 3 built-in vulnerability scanners.
-
-| Type | Name | Purpose |
-|------|------|---------|
-| trait | `Scanner` | Async scanner interface (metadata/initialize/scan/cleanup) |
-| struct | `SqlInjectionScanner` | SQL injection detection (10 payloads, error+time-based) |
-| struct | `XssScanner` | XSS detection (10 payloads, header checks) |
-| struct | `DirSearchScanner` | Directory brute-force (90+ paths, 10 concurrent) |
-| struct | `ScanResult` | Scanner output with findings |
-| struct | `Finding` | Vulnerability finding with evidence |
-| struct | `ScannerMetadata` | Name, version, supported targets, categories |
-| struct | `ScannerConfig` | Scanner settings |
-| enum | `Severity` | Critical / High / Medium / Low / Info |
-| enum | `VulnerabilityCategory` | Injection / Xss / SecurityMisconfiguration / ... |
-| enum | `ScannerError` | InitFailed / ExecutionFailed / Network / Timeout |
-
-Tests: 23
-
----
-
-### Layer 4: Analysis
-
-#### `spectra-findings` (931 lines)
-Finding lifecycle management, correlation, and reporting.
-
-| Type | Name | Purpose |
-|------|------|---------|
-| trait | `FindingsManager` | Async CRUD for managed findings |
-| struct | `ManagedFinding` | Finding with lifecycle metadata (status, notes, timestamps, tags) |
-| struct | `InMemoryFindingsManager` | In-memory implementation |
-| struct | `FindingNote` | Author + content + timestamp |
-| struct | `FindingsSummary` | Counts by severity |
-| struct | `FindingsReport` | Target findings with summary |
-| struct | `CorrelationEngine` | Groups related findings |
-| struct | `FindingGroup` | Cluster of related findings |
-| struct | `ReportGenerator` | Text/JSON/status report formatting |
-| enum | `FindingType` | Vulnerability / Misconfiguration / InfoDisclosure / ... |
-| enum | `DetectionSource` | SqlInjectionScanner / XssScanner / DirSearch / Fingerprinter / Crawler / Manual |
-| enum | `VerificationStatus` | Unverified / Verified / Disputed / Exploited |
-| enum | `FindingStatus` | New / Confirmed / FalsePositive / Investigating / Fixed / Accepted / Duplicate |
-| enum | `GroupType` | SameVulnerability / AttackChain / RootCause / AssetRelated |
-
-Tests: 15
-
----
-
-#### `spectra-evidence` (86 lines)
-Evidence collection trait and types. Trait-only — no concrete implementation.
-
-| Type | Name | Purpose |
-|------|------|---------|
-| trait | `EvidenceCollector` | Collect, store, and retrieve evidence |
-| struct | `Evidence` | Evidence item with data and metadata |
-| struct | `EvidenceId` | Typed evidence identifier |
-| enum | `EvidenceType` | HttpRequest / Screenshot / ConsoleOutput / NetworkCapture / ... |
-| enum | `EvidenceData` | Text / Binary / Url / Path / Json |
-| enum | `EvidenceError` | NotFound / InvalidData / Storage |
-
-Tests: 0
-
----
-
-#### `spectra-verification` (454 lines)
-Automated finding verification engine with confidence scoring.
-
-| Type | Name | Purpose |
-|------|------|---------|
-| struct | `VerificationEngine` | Auto-verifies findings by source + severity |
-| struct | `InMemoryVerificationStore` | Stores verification records |
-| struct | `VerificationRecord` | Verification result with confidence |
-| enum | `VerificationMethod` | ActiveScan / PassiveCheck / ManualReview / AutomatedTest |
-| enum | `VerificationOutcome` | Verified / NotVerified / PartiallyVerified / UnableToVerify |
-| enum | `VerificationError` | Failed / NotFound / Network |
-
-Confidence scoring: base (0.0–0.9) + severity bonus (Critical: +0.05, High: +0.03) + evidence bonus (+0.05 if present, -0.1 if absent).
-
-Tests: 10
-
----
-
-### Layer 5: Orchestration
-
-#### `spectra-engine` (361 lines)
-Scan orchestration pipeline tying everything together.
-
-| Type | Name | Purpose |
-|------|------|---------|
-| struct | `ScanEngine` | Full pipeline: discover → crawl → fingerprint → scan → find → report |
-| struct | `ScanPlan` | Scan configuration (target, scanners, limits) |
-| struct | `ScanJob` | Scan execution state with results |
-| struct | `EngineMetrics` | Timing and count metrics |
-| enum | `ScanStatus` | Pending → Discovering → Crawling → Fingerprinting → Scanning → Correlating → Completed |
-| enum | `EngineError` | Generic / Scanner / Network / Crawler / Fingerprint |
-
-Pipeline phases:
-1. **Network Discovery** — DNS resolution, port scanning, subdomain enumeration
-2. **Crawling** — BFS web crawl with robots.txt
-3. **Fingerprinting** — Technology detection from crawled pages
-4. **Scanning** — Run all configured vulnerability scanners
-5. **Reporting** — Generate findings report
-
-Tests: 7
-
----
-
-#### `spectra-scheduler` (626 lines)
-Priority job queue with retry and concurrency control.
-
-| Type | Name | Purpose |
-|------|------|---------|
-| trait | `JobQueue` | Async job queue interface |
-| struct | `InMemoryJobQueue` | Priority queue with retry |
-| struct | `Job` | Queued job with status and metadata |
-| struct | `JobBuilder` | Builder for jobs |
-| struct | `ScheduleConfig` | Max concurrent, poll interval, retry delay |
-| struct | `QueueStats` | Queue counts (pending/running/completed/failed) |
-| enum | `JobStatus` | Pending / Running / Completed / Failed / Retry |
-| enum | `SchedulerError` | Generic / JobNotFound / Queue |
-
-Features:
-- Priority ordering (lower number = higher priority)
-- Retry with configurable delay (exponential back-on failure)
-- Max concurrent job limit
-- Cancel running/pending jobs
-- Statistics tracking
-
-Tests: 15
-
----
-
-#### `spectra-plugins` (367 lines)
-Plugin runtime with manager and built-in examples.
-
-| Type | Name | Purpose |
-|------|------|---------|
-| trait | `Plugin` | Plugin interface (info/initialize/execute/shutdown) |
-| struct | `PluginManager` | Registry with register/get/execute/initialize/shutdown |
-| struct | `EchoPlugin` | Built-in echo plugin (passthrough) |
-| struct | `TransformPlugin` | Built-in transform plugin (uppercase strings) |
-| struct | `PluginManifest` | Plugin metadata (name, version, permissions) |
-| struct | `PluginInfo` | Manifest + state |
-| enum | `PluginState` | Unloaded / Loaded / Running / Error |
-| enum | `PluginError` | NotFound / LoadError / ExecutionError / AlreadyRegistered / Sandbox |
-
-Tests: 12
-
----
-
-#### `spectra-sandbox` (321 lines)
-Process sandboxing with resource limits.
-
-| Type | Name | Purpose |
-|------|------|---------|
-| trait | `Sandbox` | Sandbox interface (execute/cleanup) |
-| struct | `LocalSandbox` | tokio process-based sandbox |
-| struct | `ResourceLimits` | Memory, CPU, disk, network, host rules |
-| struct | `ExecutionResult` | Exit code, stdout, stderr, timing |
-| enum | `SandboxError` | InitFailed / LimitExceeded / PermissionDenied / Timeout / ProcessError |
-
-Preset limits:
-- `strict()` — 64MB RAM, 5s CPU, no network
-- `permissive()` — 1GB RAM, 120s CPU, full network
-
-Host allow/block list support with wildcard matching.
-
-Tests: 14
-
----
-
-## Apps
-
-### `spectra-api` (431 lines)
-Axum HTTP API server.
-
-**Endpoints:**
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/v1/health` | Health check |
@@ -459,172 +193,168 @@ Axum HTTP API server.
 | GET | `/api/v1/organizations/:id` | Get organization |
 | DELETE | `/api/v1/organizations/:id` | Delete organization |
 | POST | `/api/v1/projects` | Create project |
-| GET | `/api/v1/projects` | List projects |
+| GET | `/api/v1/organizations/:org_id/projects` | List projects |
 | POST | `/api/v1/targets` | Create target |
-| GET | `/api/v1/targets` | List targets |
+| GET | `/api/v1/projects/:project_id/targets` | List targets |
 | GET | `/api/v1/targets/:id` | Get target |
 | DELETE | `/api/v1/targets/:id` | Delete target |
-| POST | `/api/v1/scans` | Create scan (stub) |
-
-Structured JSON error responses. Telemetry initialization.
-
----
-
-### `spectra` CLI (567 lines)
-Command-line interface built with Clap.
-
-**Subcommands:**
-| Command | Description | Status |
-|---------|-------------|--------|
-| `init` | Initialize Spectra project | Stub |
-| `organization list/create/show/delete` | Manage organizations | **Implemented** |
-| `project list/create/show/delete` | Manage projects | **Implemented** |
-| `target list/add/show/delete/scope` | Manage targets | **Implemented** |
-| `scan run/list/show/cancel` | Scan management | Stub |
-| `finding list/show` | View findings | Stub |
-| `worker list/status` | Worker management | Stub |
-| `plugin list/install/remove` | Plugin management | Stub |
-| `report generate/list` | Report generation | Stub |
-| `config show/set` | Configuration | Display only |
+| POST | `/api/v1/scans` | Create scan |
+| GET | `/api/v1/findings` | List findings |
+| GET | `/api/v1/findings/:id` | Get finding |
+| POST | `/api/v1/findings/:id/status` | Update finding status |
+| GET | `/api/v1/scans/:scan_id/observations` | List observations |
+| GET | `/api/v1/findings/:finding_id/evidence` | List evidence |
+| GET | `/api/v1/findings/:finding_id/verification` | List verifications |
+| GET | `/api/v1/verification/summary` | Verification summary |
+| GET | `/api/v1/stats` | Platform statistics |
 
 ---
 
-### `spectra-worker` (58 lines)
-Distributed worker process.
+## CLI Commands (14 Groups)
 
-- Generates unique worker ID (UUID)
-- Detects hostname
-- Handles SIGINT/shutdown via ctrlc
-- Polling loop (stub — not connected to scheduler)
-
----
-
-## Database Schema
-
-Migration: `002_target_management.sql`
-
-| Table | Columns | Purpose |
-|-------|---------|---------|
-| `organizations` | id (UUID PK), name, slug (UNIQUE), description, settings (JSONB), created_at, updated_at | Top-level tenant |
-| `projects` | id (UUID PK), organization_id (FK), name, slug, description, status, settings (JSONB), created_at, updated_at | Project container |
-| `targets` | id (UUID PK), project_id (FK), name, target_type, value, scope_id (FK), environment, metadata (JSONB), active, created_at, updated_at | Scan targets |
-| `scopes` | id (UUID PK), target_id, allowed_rules (JSONB), excluded_rules (JSONB), rate_limits (JSONB), execution_limits (JSONB), created_at, updated_at | Scope rules |
-| `credentials` | id (UUID PK), target_id (FK), name, credential_type, encrypted_value (BYTEA), created_at, updated_at | Auth credentials |
-
-8 indexes on slugs, foreign keys, status, type, and active flag.
+| Command | Subcommands | Description |
+|---------|-------------|-------------|
+| `spectra init` | — | Initialize configuration |
+| `spectra organization` | list, create, show, delete | Organization management |
+| `spectra project` | list, create, show, delete | Project management |
+| `spectra target` | list, add, show, delete, scope | Target management |
+| `spectra scan` | run, list, show, cancel | Scan management |
+| `spectra finding` | list, show, update-status, stats | Finding management |
+| `spectra observation` | list, show | Observation queries |
+| `spectra evidence` | list, show | Evidence queries |
+| `spectra verification` | list, summary | Verification queries |
+| `spectra worker` | list, status | Worker management |
+| `spectra plugin` | list, info | Plugin management |
+| `spectra report` | generate | Report generation |
+| `spectra stats` | — | Platform statistics |
+| `spectra config` | show | Configuration display |
 
 ---
 
-## Dependency Graph
+## Database Schema (26 Tables, 6 Migrations)
+
+| Migration | Tables | Purpose |
+|-----------|--------|---------|
+| 001_initial | 4 | Core: organizations, projects, users, api_keys |
+| 002_target_management | 5 | Targets, scopes, scope_rules, environments, target_metadata |
+| 003_assets | 4 | Assets, asset_relationships, ports, dns_records |
+| 004_scanning | 4 | Scans, scan_jobs, scan_configs, scan_progress |
+| 005_findings | 5 | Findings, observations, evidence, evidence_integrity, detection_rules |
+| 006_operations | 4 | Workers, jobs, audit_log, metrics |
+
+---
+
+## Security Features
+
+| Feature | Implementation |
+|---------|----------------|
+| **No Unsafe Code** | `unsafe_code = "forbid"` workspace lint |
+| **Input Validation** | `InputValidator` with max length, blocked patterns (XSS/injection), allowed chars |
+| **Rate Limiting** | `RateLimiter` with sliding window, per-key tracking |
+| **Constant-Time Comparison** | `constant_time_eq()` prevents timing attacks |
+| **Token Generation** | `generate_token()` with hex encoding |
+| **Hashing** | `hash_sha256()` for data integrity |
+| **URL Sanitization** | SSRF prevention (blocks `@`, `\` in URLs) |
+| **Sandbox** | Process isolation, resource limits, command allow/block lists |
+| **Audit Logging** | All sandbox executions logged with command, duration, exit code, policy |
+| **Evidence Integrity** | Hash verification for all evidence |
+| **Credential Safety** | Never logged, env vars only |
+
+---
+
+## Test Coverage by Crate
 
 ```
-core ← config, events, storage
-config ← telemetry, http, network, crawler, scanner, scheduler, plugins, sandbox
-events ← target, crawler, scanner, findings, plugins
-storage ← target, http, network, fingerprint, crawler, scanner, findings, evidence, scheduler
-target ← network, fingerprint, crawler, scanner, findings, engine
-http ← crawler
-network ← fingerprint, scanner, verification
-fingerprint ← engine
-crawler ← scanner, engine
-scanner ← findings, engine
-findings ← verification, engine, evidence
-evidence ← verification
-scheduler ← engine, worker
-sandbox ← plugins
+findings     ████████████████████████████████████ 69
+core         █████████████ 27
+sandbox      █████████████ 26
+scheduler    █████████████ 25
+config       ████████████ 23
+crawler      ████████████ 23
+target       ███████████ 22
+http         ███████████ 21
+plugins      ███████████ 21
+evidence     ██████████ 20
+verification ██████████ 20
+fingerprint  █████████ 17
+events       ███████ 14
+network      ███████ 14
+scanner      ██████ 13
+engine       █████ 10
+storage      ██ 5
+telemetry    ██ 4
 ```
 
-**42 internal dependency edges.** Clean DAG, no circular dependencies.
+**Total: 387 tests, 0 failures**
 
 ---
 
-## CI/CD
+## Files & Code Statistics
 
-GitHub Actions workflow (`.github/workflows/ci.yml`) with 6 jobs:
-
-| Job | What it does |
-|-----|-------------|
-| `check` | `cargo check --workspace --all-targets` |
-| `fmt` | `cargo fmt --all -- --check` |
-| `clippy` | `cargo clippy --workspace --all-targets -- -D warnings` |
-| `test` | `cargo test --workspace` |
-| `audit` | `rustsec/audit-check` (security audit) |
-| `build` | `cargo build --workspace --release` + upload 3 binaries |
-
-Triggers: push to `main`/`develop`, PRs to `main`. Rust caching enabled.
+| Category | Files | Lines |
+|----------|-------|-------|
+| Rust crates (18) | 68 | 17,592 |
+| Rust apps (3) | 3 | 1,832 |
+| SQL migrations | 6 | 577 |
+| Documentation | 17 | 3,659 |
+| npm package | 9 | ~200 |
+| CI/CD | 1 | ~50 |
+| Config/meta | 7 | ~200 |
+| **Total** | **111** | **~24,110** |
 
 ---
 
-## Test Results
+## Dependencies
 
-**199 tests, 0 failures, clippy clean, rustfmt clean.**
+### Workspace Dependencies (16)
 
-| Crate | Tests |
-|-------|-------|
-| spectra-core | 9 |
-| spectra-events | 3 |
-| spectra-config | 2 |
-| spectra-storage | 1 |
-| spectra-telemetry | 1 |
-| spectra-target | 22 |
-| spectra-http | 21 |
-| spectra-network | 14 |
-| spectra-fingerprint | 17 |
-| spectra-crawler | 13 |
-| spectra-scanner | 23 |
-| spectra-findings | 15 |
-| spectra-evidence | 0 |
-| spectra-verification | 10 |
-| spectra-engine | 7 |
-| spectra-scheduler | 15 |
-| spectra-plugins | 12 |
-| spectra-sandbox | 14 |
-| **Total** | **199** |
+| Dependency | Purpose |
+|------------|---------|
+| async-trait | Async trait support |
+| axum | HTTP framework |
+| chrono | Date/time |
+| clap | CLI parsing |
+| dirs | Directory paths |
+| num_cpus | CPU detection |
+| serde / serde_json | Serialization |
+| thiserror | Error derive |
+| tokio | Async runtime |
+| tom | TOML parsing |
+| tracing / tracing-subscriber | Logging |
+| url | URL parsing |
+| uuid | UUID generation |
 
----
+### External Service Dependencies (All Optional)
 
-## Code Stats
-
-| Metric | Value |
-|--------|-------|
-| Workspace members | 21 |
-| Rust source files | 59 |
-| Total lines of Rust | 12,959 |
-| Public structs | 116 |
-| Public enums | 49 |
-| Public traits | 12 |
-| Test functions | 199 |
-| SQL migration files | 1 |
-| Database tables | 5 |
-| Architecture doc lines | 1,968+ |
-| CI/CD jobs | 6 |
-| External workspace deps | 25+ |
+| Service | Purpose | Required? |
+|---------|---------|-----------|
+| PostgreSQL 15+ | Persistent storage | No (in-memory default) |
+| Redis 7+ | Job queue | No (in-memory default) |
+| OpenTelemetry collector | Tracing export | No (disabled default) |
+| OpenAI API | AI analysis | No (disabled default) |
 
 ---
 
-## What's Complete vs. Stub
+## Distribution
 
-### Fully Implemented (all with tests)
-- All 18 library crate core logic
-- HTTP engine with retry, proxy, sessions
-- Network discovery (DNS + ports + subdomains)
-- Fingerprinting (60+ rules, 9 categories)
-- Web crawler (BFS, robots.txt, scope filtering)
-- 3 scanners (SQLi, XSS, DirSearch)
-- Findings lifecycle + correlation + reporting
-- Verification engine with confidence scoring
-- Priority job queue with retry
-- Scan engine orchestration pipeline
-- Plugin manager + 2 built-in plugins
-- Local sandbox with resource limits
-- CLI target/organization/project management
-- API health + org/project/target CRUD
+| Channel | URL | Version |
+|---------|-----|---------|
+| GitHub | https://github.com/Hilbras/Spectra | v0.1.0 release |
+| npm | https://www.npmjs.com/package/@hilbras/spectra | 0.1.1 |
+| Install | `npm install -g @hilbras/spectra` | — |
 
-### Stub / TODO
-- **Worker** — polling loop not connected to scheduler
-- **API** — scan creation returns hardcoded response
-- **CLI** — scan, finding, worker, plugin, report subcommands are stubs
-- **Evidence** — trait-only, no concrete implementation
-- **Database migrations** — missing `001_initial.sql`
-- **Redis** — scheduler lists redis dependency but uses in-memory queue
-- **WASM/Python plugin sandboxing** — only local process sandbox exists
+---
+
+## What's Next (Roadmap)
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| PostgreSQL wiring | Connect all in-memory stores to Postgres | Pending |
+| Redis scheduler | Replace in-memory queue with Redis | Pending |
+| Authentication | API key + OAuth2 auth | Pending |
+| WASM plugins | WebAssembly plugin runtime | Pending |
+| Python plugins | Python plugin support | Pending |
+| Web frontend | Dashboard UI | Pending |
+| Docker | Container image | Pending |
+| GitHub Actions | CI/CD pipeline | Pending |
+| crates.io | Publish core crates | Pending |
