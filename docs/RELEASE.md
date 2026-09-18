@@ -1,33 +1,34 @@
 # Release Process
 
-## Spectra v0.1.0 Release Checklist
+## v0.1.0 Release Checklist
 
 ### Pre-Release
 
-- [ ] All tests pass: `cargo test --workspace`
-- [ ] Clippy clean: `cargo clippy --workspace -- -D warnings`
-- [ ] Rustfmt clean: `cargo fmt --all -- --check`
-- [ ] Cargo audit clean: `cargo audit`
-- [ ] Documentation complete
-- [ ] CHANGELOG updated
-- [ ] Version synchronized across all crates
+- [x] All tests pass: `cargo test --workspace` (387+ tests)
+- [x] Clippy clean: `cargo clippy --workspace -- -D warnings`
+- [x] Rustfmt clean: `cargo fmt --all -- --check`
+- [x] Documentation complete
+- [x] CHANGELOG updated
+- [x] Version synchronized: all crates report `0.1.0`
 
 ### Release
 
-- [ ] Create release branch: `git checkout -b release/v0.1.0`
-- [ ] Final test run
-- [ ] Create git tag: `git tag -a v0.1.0 -m "Spectra v0.1.0"`
-- [ ] Push tag: `git push origin v0.1.0`
-- [ ] Create GitHub Release with notes
-- [ ] Build release artifacts
-- [ ] Upload artifacts to GitHub Release
+- [x] Git tag: `v0.1.0`
+- [x] Push tag: `git push origin v0.1.0`
+- [x] GitHub repository: `https://github.com/Hilbras/Spectra`
+
+### npm Publishing
+
+- [x] Package name: `@hilbras/spectra`
+- [x] Version: `0.1.0`
+- [x] Published to npm registry
 
 ### Post-Release
 
+- [ ] GitHub Release with notes (create via GitHub UI)
+- [ ] Build release artifacts (see below)
 - [ ] Verify clean clone build
-- [ ] Verify npm package (if applicable)
 - [ ] Announce release
-- [ ] Merge to main branch
 
 ## Version Sources
 
@@ -39,13 +40,10 @@ All must report `0.1.0`:
 | All crates | `version.workspace = true` |
 | CLI | `spectra --version` |
 | API | Health check response |
-| npm | `package.json` version |
+| npm | `npm/package.json` version |
 | Git tag | `v0.1.0` |
-| GitHub Release | `Spectra v0.1.0` |
 
-## Release Artifacts
-
-Build for supported platforms:
+## Building Release Artifacts
 
 ```bash
 # Linux x86_64
@@ -59,13 +57,9 @@ cargo build --release --target x86_64-apple-darwin
 
 # macOS aarch64
 cargo build --release --target aarch64-apple-darwin
-
-# Windows x86_64
-cargo build --release --target x86_64-pc-windows-msvc
 ```
 
 Generate checksums:
-
 ```bash
 sha256sum spectra-* > checksums.txt
 ```
@@ -77,57 +71,61 @@ sha256sum spectra-* > checksums.txt
 
 ## What's New
 
-- [Feature 1]
-- [Feature 2]
+- 21-crate Rust workspace
+- Target management with scope enforcement
+- Web crawler with robots.txt support
+- 60+ technology fingerprinting rules
+- SQL injection, XSS, and directory search scanners
+- Evidence engine with redaction and integrity
+- Observation model with 13 types
+- Detection engine with AND/OR logic
+- Verification with confidence scoring
+- Plugin system with sandbox
+- 387+ tests, no unsafe code
 
 ## Installation
 
+### npm
+```bash
+npm install -g @hilbras/spectra
+```
+
 ### From Source
-
-\```bash
-git clone https://github.com/spectra/spectra.git
-cd spectra
+```bash
+git clone https://github.com/Hilbras/Spectra.git
+cd Spectra
 cargo build --release
-\```
-
-### Binary Download
-
-Download the appropriate binary for your platform from the assets below.
-
-## Architecture
-
-[Link to ARCHITECTURE.md]
+```
 
 ## Known Limitations
 
-- [Limitation 1]
-- [Limitation 2]
+- No built-in API authentication
+- PostgreSQL storage not yet wired (in-memory only)
+- No Redis-backed scheduler
+- No WASM/Python plugin sandboxing
 
 ## Security
 
-See SECURITY.md for reporting vulnerabilities.
+See SECURITY.md for vulnerability reporting.
 
 ## License
 
-MIT
+AGPL-3.0
 ```
 
-## npm Publishing (Future)
+## npm Publishing
 
 ```bash
-cd packages/sdk
-npm install
-npm run build
-npm pack --dry-run
-npm publish
+cd npm
+npm publish --access public
 ```
 
 ## Rollback Plan
 
 If a critical issue is found after release:
 
-1. Yank the npm package (if applicable)
-2. Mark GitHub Release as pre-release
-3. Create hotfix branch
-4. Release v0.1.1 with fix
-5. Update CHANGELOG
+1. Mark GitHub Release as pre-release
+2. Create hotfix branch: `git checkout -b hotfix/v0.1.1`
+3. Release v0.1.1 with fix
+4. Update CHANGELOG
+5. Publish npm update: `npm version patch && npm publish --access public`

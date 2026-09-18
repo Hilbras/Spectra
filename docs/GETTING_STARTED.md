@@ -1,198 +1,191 @@
-# Getting Started with Spectra
-
-## What is Spectra?
-
-Spectra is a modular, extensible, distributed security testing and analysis platform for authorized targets. It helps security professionals discover, scan, and analyze web applications and infrastructure.
+# Getting Started
 
 ## Prerequisites
 
-- **Rust** 1.75+ ([install](https://rustup.rs/))
-- **PostgreSQL** 15+ (optional, for persistent storage)
-- **Redis** 7+ (optional, for distributed workers)
+| Requirement | Version | Install |
+|-------------|---------|---------|
+| Rust | 1.75+ | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| PostgreSQL | 15+ | `apt install postgresql` (optional, for persistent storage) |
+| Node.js | 18+ | For npm package installation |
 
-## Quick Install
+## Installation
 
-### From Source
+### Option 1: npm (Recommended)
 
 ```bash
-git clone https://github.com/spectra/spectra.git
-cd spectra
+npm install -g @hilbras/spectra
+```
+
+This downloads a pre-built binary for your platform and adds `spectra` to your PATH.
+
+### Option 2: From Source
+
+```bash
+git clone https://github.com/Hilbras/Spectra.git
+cd Spectra
 cargo build --release
 ```
 
-The binary will be at `target/release/spectra`.
-
-### From Binary
-
-Download the latest release for your platform from [GitHub Releases](https://github.com/spectra/spectra/releases).
-
-## First Run
-
-### 1. Initialize a Project
+The binary will be at `target/release/spectra`. Add it to your PATH:
 
 ```bash
-spectra init
+cp target/release/spectra /usr/local/bin/
 ```
 
-This creates a `spectra.toml` configuration file in the current directory.
+### Option 3: Cargo Install (from crates.io, coming soon)
+
+```bash
+cargo install spectra-cli
+```
+
+## First Scan
+
+### 1. Verify Installation
+
+```bash
+spectra --version
+# spectra 0.1.0
+```
 
 ### 2. Create an Organization
 
 ```bash
-spectra organization create --name "My Org" --slug "my-org"
+spectra organization create "My Company" --slug my-company
+# Created organization: <org-id>
 ```
 
 ### 3. Create a Project
 
 ```bash
-spectra project create --org "my-org" --name "My Project" --slug "my-project"
+spectra project create "Web Application" --organization <org-id> --slug webapp
+# Created project: <project-id>
 ```
 
 ### 4. Add a Target
 
 ```bash
-spectra target add --project "my-project" --name "Example" --type domain --value "example.com"
+spectra target add "Production Site" \
+  --target-type domain \
+  --value example.com \
+  --project <project-id>
+# Created target: <target-id>
 ```
+
+Supported target types: `domain`, `url`, `ip`, `cidr`
 
 ### 5. Run a Scan
 
 ```bash
 spectra scan run --target <target-id>
+# Started scan: <scan-id>
 ```
+
+Scan types: `full` (default), `quick`, `recon`
 
 ### 6. View Findings
 
 ```bash
-spectra finding list --target <target-id>
+spectra finding list
+spectra finding list --severity critical
+spectra finding list --status new
+spectra finding stats
 ```
 
-## Configuration
-
-Spectra uses TOML configuration. The config file is searched in:
-
-1. Current directory (`./spectra.toml`)
-2. Home directory (`~/.config/spectra/spectra.toml`)
-3. System directory (`/etc/spectra/spectra.toml`)
-
-### Example Configuration
-
-```toml
-[api]
-host = "127.0.0.1"
-port = 8080
-
-[database]
-url = "postgres://localhost/spectra"
-
-[redis]
-url = "redis://localhost:6379"
-
-[network]
-dns_servers = ["8.8.8.8", "8.8.4.4"]
-timeout_ms = 5000
-
-[crawler]
-max_depth = 3
-max_pages = 100
-delay_ms = 100
-
-[scanner]
-max_concurrent = 10
-timeout_secs = 300
-```
-
-### Environment Variables
-
-All config values can be overridden with environment variables:
+### 7. Check Verification
 
 ```bash
-SPECTRA_API__HOST=0.0.0.0
-SPECTRA_API__PORT=9090
-SPECTRA_DATABASE__URL=postgres://localhost/spectra
+spectra verification summary
 ```
 
-## Architecture
-
-Spectra follows a layered architecture:
+## Workflow Overview
 
 ```
-Core → Config → Target → Network/Fingerprint/Crawler → Scanner → Findings → Engine
+1. Create Organization
+2.    └── Create Project
+3.          └── Add Target(s)
+4.                └── Run Scan
+5.                      ├── Discover (DNS, ports, assets)
+6.                      ├── Crawl (URLs, forms, pages)
+7.                      ├── Fingerprint (technologies, versions)
+8.                      ├── Scan (SQLi, XSS, dir search)
+9.                      ├── Observe (record observations)
+10.                     ├── Detect (match detection rules)
+11.                     ├── Verify (auto-verify findings)
+12.                     └── Report (generate findings report)
+13. Review Findings
+14. Export Report
 ```
 
-Each layer has clear responsibilities and dependencies flow downward.
-
-## CLI Commands
-
-### Organization Management
-
-```bash
-spectra organization list
-spectra organization create --name "Org" --slug "org"
-spectra organization show <id>
-spectra organization delete <id>
-```
-
-### Project Management
-
-```bash
-spectra project list --org <org-id>
-spectra project create --org <org-id> --name "Project" --slug "project"
-spectra project show <id>
-spectra project delete <id>
-```
-
-### Target Management
-
-```bash
-spectra target list --project <project-id>
-spectra target add --project <project-id> --name "Target" --type domain --value "example.com"
-spectra target show <id>
-spectra target delete <id>
-spectra target scope <id>
-```
-
-### Scan Management
-
-```bash
-spectra scan run --target <target-id>
-spectra scan list
-spectra scan show <id>
-spectra scan cancel <id>
-```
-
-## API Server
+## API Quick Start
 
 Start the API server:
 
 ```bash
 cargo run --bin spectra-api
+# Listening on 0.0.0.0:8080
 ```
 
-The API is available at `http://localhost:8080`.
+### Create resources via API:
 
-### API Endpoints
+```bash
+# Health check
+curl http://localhost:8080/api/v1/health
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/v1/health` | Health check |
-| POST | `/api/v1/organizations` | Create organization |
-| GET | `/api/v1/organizations` | List organizations |
-| GET | `/api/v1/targets` | List targets |
-| POST | `/api/v1/scans` | Start scan |
+# Create organization
+curl -X POST http://localhost:8080/api/v1/organizations \
+  -H "Content-Type: application/json" \
+  -d '{"name": "My Org", "slug": "my-org"}'
 
-## Worker
+# Create project
+curl -X POST http://localhost:8080/api/v1/projects \
+  -H "Content-Type: application/json" \
+  -d '{"organization_id": "<org-id>", "name": "Web App", "slug": "webapp"}'
 
-Start a worker process:
+# Create target
+curl -X POST http://localhost:8080/api/v1/targets \
+  -H "Content-Type: application/json" \
+  -d '{"project_id": "<project-id>", "name": "Example", "target_type": "domain", "value": "example.com"}'
+
+# Run scan
+curl -X POST http://localhost:8080/api/v1/scans \
+  -H "Content-Type: application/json" \
+  -d '{"target_id": "<target-id>"}'
+```
+
+See [API.md](API.md) for the full API reference.
+
+## Worker Setup
+
+Start a worker to process scan jobs:
 
 ```bash
 cargo run --bin spectra-worker
+# Worker <worker-id> started, polling for jobs...
 ```
 
-The worker connects to the scheduler and processes scan jobs.
+The worker connects to the scheduler and processes jobs concurrently.
+
+## Configuration
+
+Spectra can be configured via file or environment variables:
+
+```bash
+# Set database URL
+export SPECTRA_DATABASE__URL="postgresql://user:pass@localhost/spectra"
+
+# Set log level
+export SPECTRA_LOGGING__LEVEL=debug
+
+# Start with custom config
+spectra --config /path/to/spectra.toml scan list
+```
+
+See [CONFIGURATION.md](CONFIGURATION.md) for all options.
 
 ## Next Steps
 
-- Read the [Architecture Guide](ARCHITECTURE.md)
-- Review [Configuration Reference](CONFIGURATION.md)
-- Check the [API Documentation](API.md)
-- Learn about [Plugin Development](PLUGIN_DEVELOPMENT.md)
+- [Configuration Reference](CONFIGURATION.md) — all config options
+- [API Documentation](API.md) — full REST API reference
+- [Plugin Development](PLUGIN_DEVELOPMENT.md) — extend Spectra with plugins
+- [Architecture](architecture/ARCHITECTURE.md) — system design deep dive
+- [Development Guide](DEVELOPMENT.md) — contributing to Spectra
