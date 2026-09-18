@@ -21,7 +21,7 @@ Health check endpoint.
 ```json
 {
   "status": "healthy",
-  "version": "0.1.0"
+  "version": "0.1.1"
 }
 ```
 
@@ -326,6 +326,6 @@ Get platform statistics.
 
 ## Authentication
 
-v0.1.0 does not include built-in authentication. Use network-level security (firewall, VPN, reverse proxy with auth) to protect the API.
+v0.1.1 does not include built-in authentication. Use network-level security (firewall, VPN, reverse proxy with auth) to protect the API.
 
 Future versions will support API key and OAuth2 authentication.

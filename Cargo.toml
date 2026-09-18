@@ -25,11 +25,11 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.75"
-license = "MIT"
-repository = "https://github.com/spectra/spectra"
+license = "AGPL-3.0"
+repository = "https://github.com/Hilbras/Spectra"
 
 [workspace.dependencies]
 # Async runtime

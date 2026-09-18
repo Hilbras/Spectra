@@ -59,7 +59,7 @@ max_depth = 10             # Max crawl depth from seed
 max_pages = 10000          # Max pages per crawl
 concurrent_requests = 10   # Parallel HTTP requests
 respect_robots = true      # Honor robots.txt
-user_agent = "Spectra/0.1.0"
+user_agent = "Spectra/0.1.1"
 
 # AI Analysis
 [ai]

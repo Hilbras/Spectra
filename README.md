@@ -236,24 +236,24 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full development guide.
 
 | Crate | Version | Description |
 |-------|---------|-------------|
-| spectra-core | 0.1.0 | Core primitives and error types |
-| spectra-config | 0.1.0 | Configuration management |
-| spectra-events | 0.1.0 | Event bus system |
-| spectra-storage | 0.1.0 | Storage abstractions |
-| spectra-target | 0.1.0 | Target management |
-| spectra-http | 0.1.0 | HTTP client |
-| spectra-network | 0.1.0 | Network discovery |
-| spectra-fingerprint | 0.1.0 | Technology fingerprinting |
-| spectra-crawler | 0.1.0 | Web crawler |
-| spectra-scanner | 0.1.0 | Vulnerability scanners |
-| spectra-findings | 0.1.0 | Finding lifecycle |
-| spectra-evidence | 0.1.0 | Evidence engine |
-| spectra-verification | 0.1.0 | Finding verification |
-| spectra-engine | 0.1.0 | Scan orchestration |
-| spectra-scheduler | 0.1.0 | Job scheduling |
-| spectra-plugins | 0.1.0 | Plugin system |
-| spectra-sandbox | 0.1.0 | Process sandboxing |
-| spectra-telemetry | 0.1.0 | OpenTelemetry integration |
+| spectra-core | 0.1.1 | Core primitives and error types |
+| spectra-config | 0.1.1 | Configuration management |
+| spectra-events | 0.1.1 | Event bus system |
+| spectra-storage | 0.1.1 | Storage abstractions |
+| spectra-target | 0.1.1 | Target management |
+| spectra-http | 0.1.1 | HTTP client |
+| spectra-network | 0.1.1 | Network discovery |
+| spectra-fingerprint | 0.1.1 | Technology fingerprinting |
+| spectra-crawler | 0.1.1 | Web crawler |
+| spectra-scanner | 0.1.1 | Vulnerability scanners |
+| spectra-findings | 0.1.1 | Finding lifecycle |
+| spectra-evidence | 0.1.1 | Evidence engine |
+| spectra-verification | 0.1.1 | Finding verification |
+| spectra-engine | 0.1.1 | Scan orchestration |
+| spectra-scheduler | 0.1.1 | Job scheduling |
+| spectra-plugins | 0.1.1 | Plugin system |
+| spectra-sandbox | 0.1.1 | Process sandboxing |
+| spectra-telemetry | 0.1.1 | OpenTelemetry integration |
 
 ## Testing
 

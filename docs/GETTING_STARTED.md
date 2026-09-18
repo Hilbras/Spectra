@@ -44,7 +44,7 @@ cargo install spectra-cli
 
 ```bash
 spectra --version
-# spectra 0.1.0
+# spectra 0.1.1
 ```
 
 ### 2. Create an Organization
