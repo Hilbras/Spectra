@@ -1,0 +1,37 @@
+[package]
+name = "spectra-worker"
+description = "Spectra distributed worker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "spectra-worker"
+path = "src/main.rs"
+
+[dependencies]
+spectra-core = { workspace = true }
+spectra-config = { workspace = true }
+spectra-storage = { workspace = true }
+spectra-events = { workspace = true }
+spectra-telemetry = { workspace = true }
+spectra-scanner = { workspace = true }
+spectra-crawler = { workspace = true }
+spectra-network = { workspace = true }
+spectra-fingerprint = { workspace = true }
+spectra-plugins = { workspace = true }
+spectra-scheduler = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true }
+hostname = "0.4"
+ctrlc = "3"
+chrono = { workspace = true }
+
+[lints]
+workspace = true

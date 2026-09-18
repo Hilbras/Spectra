@@ -1,0 +1,52 @@
+{
+  "name": "@hilbras/spectra",
+  "version": "0.1.0",
+  "description": "Modular, extensible, distributed security testing and analysis platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "spectra": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "node scripts/build.js",
+    "postinstall": "node scripts/install.js",
+    "preuninstall": "node scripts/uninstall.js"
+  },
+  "keywords": [
+    "security",
+    "testing",
+    "vulnerability",
+    "scanner",
+    "pentest",
+    "analysis",
+    "rust",
+    "cybersecurity"
+  ],
+  "author": "Hilbras",
+  "license": "AGPL-3.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Hilbras/Spectra.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Hilbras/Spectra/issues"
+  },
+  "homepage": "https://github.com/Hilbras/Spectra#readme",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist/",
+    "scripts/",
+    "README.md",
+    "LICENSE"
+  ],
+  "os": [
+    "linux",
+    "darwin"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}

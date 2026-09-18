@@ -1,0 +1,39 @@
+[package]
+name = "spectra-api"
+description = "Spectra API server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "spectra-api"
+path = "src/main.rs"
+
+[dependencies]
+spectra-core = { workspace = true }
+spectra-config = { workspace = true }
+spectra-storage = { workspace = true }
+spectra-events = { workspace = true }
+spectra-telemetry = { workspace = true }
+spectra-target = { workspace = true }
+spectra-engine = { workspace = true }
+spectra-findings = { workspace = true }
+spectra-evidence = { workspace = true }
+spectra-verification = { workspace = true }
+spectra-scanner = { workspace = true }
+spectra-scheduler = { workspace = true }
+spectra-plugins = { workspace = true }
+axum = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true }
+
+[lints]
+workspace = true

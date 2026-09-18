@@ -1,0 +1,117 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/events",
+    "crates/config",
+    "crates/storage",
+    "crates/telemetry",
+    "crates/target",
+    "crates/http",
+    "crates/network",
+    "crates/fingerprint",
+    "crates/crawler",
+    "crates/scanner",
+    "crates/findings",
+    "crates/evidence",
+    "crates/verification",
+    "crates/engine",
+    "crates/scheduler",
+    "crates/plugins",
+    "crates/sandbox",
+    "apps/api",
+    "apps/cli",
+    "apps/worker",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+repository = "https://github.com/spectra/spectra"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json"] }
+
+# HTTP
+reqwest = { version = "0.11", features = ["json"] }
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.4", features = ["cors", "trace"] }
+
+# UUID
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Regex
+regex = "1"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Tracing / Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# OpenTelemetry
+opentelemetry = "0.20"
+opentelemetry-stdout = "0.1"
+opentelemetry-otlp = "0.13"
+
+# Configuration
+dirs = "5"
+
+# Cryptography
+sha2 = "0.10"
+hmac = "0.12"
+
+# Redis
+redis = { version = "0.23", features = ["tokio-comp", "connection-manager"] }
+
+# Testing
+tokio-test = "0.4"
+
+# Internal crates
+spectra-core = { path = "crates/core" }
+spectra-events = { path = "crates/events" }
+spectra-config = { path = "crates/config" }
+spectra-storage = { path = "crates/storage" }
+spectra-telemetry = { path = "crates/telemetry" }
+spectra-target = { path = "crates/target" }
+spectra-http = { path = "crates/http" }
+spectra-network = { path = "crates/network" }
+spectra-fingerprint = { path = "crates/fingerprint" }
+spectra-crawler = { path = "crates/crawler" }
+spectra-scanner = { path = "crates/scanner" }
+spectra-findings = { path = "crates/findings" }
+spectra-evidence = { path = "crates/evidence" }
+spectra-verification = { path = "crates/verification" }
+spectra-engine = { path = "crates/engine" }
+spectra-scheduler = { path = "crates/scheduler" }
+spectra-plugins = { path = "crates/plugins" }
+spectra-sandbox = { path = "crates/sandbox" }
+
+# Linting
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+pedantic = { level = "allow", priority = -1 }
+nursery = { level = "allow", priority = -1 }

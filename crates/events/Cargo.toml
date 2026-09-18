@@ -1,0 +1,21 @@
+[package]
+name = "spectra-events"
+description = "Event bus and event types for Spectra"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+spectra-core = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+tokio-stream = "0.1"
+
+[lints]
+workspace = true

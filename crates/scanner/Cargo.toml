@@ -1,0 +1,28 @@
+[package]
+name = "spectra-scanner"
+description = "Scanner framework and runtime for Spectra"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+spectra-core = { workspace = true }
+spectra-target = { workspace = true }
+spectra-network = { workspace = true }
+spectra-crawler = { workspace = true }
+spectra-storage = { workspace = true }
+spectra-events = { workspace = true }
+spectra-config = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+url = "2"
+urlencoding = "2"
+
+[lints]
+workspace = true

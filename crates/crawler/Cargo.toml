@@ -1,0 +1,28 @@
+[package]
+name = "spectra-crawler"
+description = "Web crawler for Spectra"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+spectra-core = { workspace = true }
+spectra-target = { workspace = true }
+spectra-network = { workspace = true }
+spectra-http = { workspace = true }
+spectra-storage = { workspace = true }
+spectra-events = { workspace = true }
+spectra-config = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true }
+scraper = "0.17"
+url = "2"
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

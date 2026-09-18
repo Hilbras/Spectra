@@ -1,0 +1,29 @@
+[package]
+name = "spectra-http"
+description = "Production-grade HTTP engine for Spectra"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+spectra-core = { workspace = true }
+spectra-config = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true, features = ["cookies"] }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+url = "2"
+bytes = "1"
+chrono = { workspace = true }
+rand = "0.8"
+
+[dev-dependencies]
+tokio-test = { workspace = true }
+wiremock = "0.5"
+
+[lints]
+workspace = true

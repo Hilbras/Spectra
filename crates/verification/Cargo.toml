@@ -1,0 +1,22 @@
+[package]
+name = "spectra-verification"
+description = "Finding verification engine for Spectra"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+spectra-core = { workspace = true }
+spectra-findings = { workspace = true }
+spectra-scanner = { workspace = true }
+spectra-network = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true
