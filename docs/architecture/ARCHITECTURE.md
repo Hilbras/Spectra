@@ -1,5 +1,25 @@
 # Spectra Architecture Specification v1.0
 
+> **Superseded.** This document describes a 12-stage pipeline of which **5 stages do
+> not execute**. It is retained as background for the design intent, and should not be
+> used to answer "what does Spectra do" — the source does not do most of what this
+> says.
+>
+> The architecture freeze set replaces it:
+> [`README.md`](README.md) for the index and ADRs, then
+> [`execution.md`](execution.md) for the pipeline that actually runs,
+> [`overview.md`](overview.md) for what exists and what is dead, and
+> [`../audit/PHASE_0_AUDIT.md`](../audit/PHASE_0_AUDIT.md) for the evidence.
+>
+> The specific claims known to be false: the arrows `Engine → Scheduler`,
+> `Worker → Execution`, `→ Detection`, `→ Verification` and `→ Correlation` are not
+> executable code; `→ Events` was not either and now is. §8 (Plugin Contracts) and
+> §10 (Storage Abstractions) describe subsystems with no importers.
+> `Plugin Contracts` is treated in [`plugins.md`](plugins.md), which recommends
+> dropping `s.txt` Phases 24–26.
+
+---
+
 > Status: Draft  
 > Date: 2026-09-17  
 > Authors: Spectra Development Team
