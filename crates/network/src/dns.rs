@@ -54,6 +54,7 @@ impl DnsRecord {
 }
 
 /// DNS resolver for performing lookups.
+#[derive(Debug, Clone)]
 pub struct DnsResolver {
     /// DNS servers to use.
     servers: Vec<String>,
@@ -82,10 +83,36 @@ impl DnsResolver {
         }
     }
 
+    /// Validates a domain name.
+    fn validate_domain(domain: &str) -> crate::NetworkResult<()> {
+        if domain.is_empty() {
+            return Err(crate::NetworkError::InvalidInput(
+                "Domain cannot be empty".to_string(),
+            ));
+        }
+
+        if domain.len() > 253 {
+            return Err(crate::NetworkError::InvalidInput(
+                "Domain name too long".to_string(),
+            ));
+        }
+
+        // Check for null bytes
+        if domain.contains('\0') {
+            return Err(crate::NetworkError::InvalidInput(
+                "Domain contains null bytes".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
     /// Resolves a domain name to IP addresses (A records).
     pub async fn resolve(&self, domain: &str) -> crate::NetworkResult<Vec<IpAddr>> {
         use std::time::Duration;
         use tokio::net::TcpStream;
+
+        Self::validate_domain(domain)?;
 
         let timeout = Duration::from_millis(self.timeout_ms);
 
@@ -112,6 +139,8 @@ impl DnsResolver {
 
     /// Resolves a domain and returns all DNS records.
     pub async fn resolve_all(&self, domain: &str) -> crate::NetworkResult<Vec<DnsRecord>> {
+        Self::validate_domain(domain)?;
+
         let mut records = Vec::new();
 
         // Resolve A records

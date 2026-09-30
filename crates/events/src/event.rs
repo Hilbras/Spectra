@@ -26,7 +26,12 @@ pub enum EventType {
     // Scan events
     ScanStarted,
     ScanProgress,
+    /// The target was fully assessed. Not a synonym for "finished".
     ScanCompleted,
+    /// Usable but incomplete results — a timeout, a coverage gap, a crawl error.
+    /// See [`EventPayload::ScanPartial`].
+    ScanPartial,
+    /// No usable coverage at all.
     ScanFailed,
     ScanCancelled,
 
@@ -92,6 +97,21 @@ pub enum EventPayload {
     },
     ScanCompleted {
         scan_id: String,
+    },
+    /// The scan stopped with usable but incomplete results.
+    ///
+    /// Added because the taxonomy offered only `ScanCompleted` and `ScanFailed` for
+    /// a scan that found findings but did not finish assessing the target. A
+    /// publisher choosing between those two has to pick the less-wrong one, and the
+    /// wrong choice is `ScanCompleted` — the same false-success shape Remediation 10
+    /// removed from the scan API, reappearing on a channel nobody was watching.
+    /// Partial is the common outcome of a timeout or a crawl error, so it is not an
+    /// edge case.
+    ScanPartial {
+        scan_id: String,
+        /// Why the coverage is incomplete, so a subscriber can decide what to do
+        /// rather than having to reconstruct it.
+        reason: String,
     },
     ScanFailed {
         scan_id: String,
@@ -272,7 +292,7 @@ mod tests {
 
     #[test]
     fn event_source_variants() {
-        let sources = vec![
+        let sources = [
             EventSource::System,
             EventSource::User {
                 user_id: "u1".into(),

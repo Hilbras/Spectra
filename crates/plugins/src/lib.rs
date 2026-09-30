@@ -1,3 +1,28 @@
+//! Plugin registry. **There is no host, and there must not be one yet.**
+//!
+//! What exists here is a container: a [`Plugin`] trait, a [`PluginManager`] that
+//! holds `Box<dyn Plugin>` in a map, and three example plugins ([`EchoPlugin`],
+//! [`TransformPlugin`], [`CounterPlugin`]) that exist to exercise the trait. There
+//! is no manifest loading, no discovery, no dynamic loading, and nothing anywhere in
+//! the workspace that constructs a [`PluginManager`].
+//!
+//! # Why this matters
+//!
+//! The `PluginError::Sandbox` variant wraps [`spectra_sandbox`], which is not a
+//! sandbox — it spawns real subprocesses inside the server process. Wiring this
+//! crate to it as a plugin host would execute third-party code with the server's
+//! full privileges while the type names said otherwise. `s.txt` Phase 26 explicitly
+//! forbids this ("Never embed arbitrary Python execution directly into the main API
+//! process"), and Phase 25 asks for a WASM sandbox with capability-based permissions
+//! that does not exist.
+//!
+//! In-process Rust traits cannot be populated from outside the binary anyway, so
+//! nothing could be registered dynamically until a real host exists.
+//!
+//! If you are here to add a plugin host: do not, until `spectra-sandbox` provides
+//! actual isolation. See that crate's module documentation for what it does and does
+//! not enforce.
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;

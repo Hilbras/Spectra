@@ -13,7 +13,7 @@ pub use frontier::UrlFrontier;
 pub use parser::{HtmlParser, ParsedForm, ParsedFormField};
 pub use policy::CrawlPolicy;
 
-use tracing::info;
+use tracing::{info, warn};
 
 use spectra_http::HttpClient;
 use spectra_target::Target;
@@ -77,7 +77,7 @@ impl Crawler {
         let filter = CrawlFilter::from_scope(&target.scope);
         let mut frontier = UrlFrontier::new(base_url.clone(), self.config.max_pages as usize);
         let mut pages = Vec::new();
-        let mut errors = 0u32;
+        let mut errors: Vec<String> = Vec::new();
         let mut total_discovered = 0u32;
 
         while let Some((url, depth)) = frontier.dequeue() {
@@ -118,8 +118,12 @@ impl Crawler {
 
                     pages.push(page);
                 }
-                Err(_) => {
-                    errors += 1;
+                Err(e) => {
+                    // The reason used to be discarded here, leaving a bare
+                    // count that could not distinguish an unreachable target
+                    // from a 404 or a bug in this crawler.
+                    warn!(url = %url, error = %e, "failed to fetch page");
+                    errors.push(format!("{url}: {e}"));
                 }
             }
 
@@ -132,18 +136,36 @@ impl Crawler {
             }
         }
 
+        if pages.is_empty() {
+            // Worth a dedicated warning: downstream stages consume `pages`, so
+            // an empty crawl means the whole scan has nothing to work with and
+            // will report zero findings. That is a false negative, not a clean
+            // result, and the operator needs to be told here rather than
+            // discovering it in a report.
+            warn!(
+                target = %target.value(),
+                attempted = total_discovered,
+                "crawl produced no pages; downstream scanning will have nothing to analyse"
+            );
+        }
+
         info!(
             pages_crawled = pages.len(),
             total_discovered = total_discovered,
-            errors = errors,
+            errors = errors.len(),
             "Crawl completed"
         );
+
+        // The count of pages actually retrieved, not the count attempted. These
+        // were the same value, which made `success_rate()` a constant 1.0 and
+        // let a wholly failed crawl report perfect success.
+        let total_crawled = pages.len() as u32;
 
         Ok(CrawlResult {
             target_id: target.id.clone(),
             pages,
             total_discovered,
-            total_crawled: total_discovered,
+            total_crawled,
             errors,
         })
     }
@@ -210,5 +232,123 @@ mod tests {
         let config = CrawlerConfig::default();
         let crawler = Crawler::new(config);
         assert_eq!(crawler.config.max_depth, 10);
+    }
+
+    /// A target pointing at a port nothing listens on.
+    ///
+    /// Loopback port 1 is used rather than an external host so the test needs no
+    /// network: the connection is refused immediately by the kernel. The SSRF
+    /// guard is applied by the API layer, not inside the crawler, so a direct
+    /// call does attempt the fetch — which is what makes this observable.
+    fn dead_target() -> Target {
+        Target::new(
+            spectra_core::Id::new(),
+            "dead".into(),
+            spectra_target::TargetType::Url,
+            "http://127.0.0.1:1/".into(),
+        )
+    }
+
+    /// A one-shot HTTP server on loopback that returns `body` for every request.
+    ///
+    /// Hand-rolled over `std::net` so the test needs no dev-dependency and no
+    /// external service. Returns the base URL.
+    fn serve_once(body: &'static str) -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let port = listener.local_addr().expect("local addr").port();
+
+        std::thread::spawn(move || {
+            // Serve a bounded number of requests so the thread cannot outlive the
+            // test process if the crawler retries.
+            for stream in listener.incoming().take(8) {
+                let Ok(mut stream) = stream else { break };
+                use std::io::{Read, Write};
+                let mut buffer = [0u8; 2048];
+                let _ = stream.read(&mut buffer);
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+
+        format!("http://127.0.0.1:{port}/")
+    }
+
+    /// The regression: `crawl()` assigned `total_discovered` to
+    /// `total_crawled`, so a crawl where every fetch failed reported a perfect
+    /// success rate and a page count that had never been fetched.
+    #[tokio::test]
+    async fn a_crawl_where_every_fetch_fails_counts_zero_pages() {
+        let crawler = Crawler::new(CrawlerConfig {
+            delay_ms: 0,
+            max_pages: 5,
+            ..Default::default()
+        });
+
+        let result = crawler
+            .crawl(&dead_target())
+            .await
+            .expect("crawl should complete even when every fetch fails");
+
+        assert_eq!(result.total_discovered, 1, "the URL was attempted");
+        assert_eq!(
+            result.total_crawled, 0,
+            "no page was retrieved, so none may be counted"
+        );
+        assert_eq!(result.pages.len(), 0);
+        assert!(result.error_count() >= 1, "the failure must be recorded");
+        assert_eq!(
+            result.success_rate(),
+            0.0,
+            "a wholly failed crawl must not report a perfect success rate"
+        );
+        assert!(result.yielded_nothing());
+        assert!(
+            !result.errors.is_empty(),
+            "the reason must be retained, not just counted"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_successful_crawl_counts_the_pages_it_retrieved() {
+        let base = serve_once("<html><body><a href=\"/other\">other</a></body></html>");
+        let target = Target::new(
+            spectra_core::Id::new(),
+            "live".into(),
+            spectra_target::TargetType::Url,
+            base.clone(),
+        );
+
+        let crawler = Crawler::new(CrawlerConfig {
+            delay_ms: 0,
+            max_pages: 5,
+            ..Default::default()
+        });
+
+        let result = crawler.crawl(&target).await.expect("crawl should complete");
+
+        assert_eq!(
+            result.total_crawled as usize,
+            result.pages.len(),
+            "the crawled count must equal the pages actually retrieved"
+        );
+        // The exact number depends on how far the frontier gets, which is not
+        // what is under test here. The invariant is that the reported count is
+        // the number of pages actually retrieved.
+        assert!(
+            result.total_crawled >= 1,
+            "at least the entry page should have been retrieved"
+        );
+        assert!(
+            result.total_crawled <= result.total_discovered,
+            "cannot have retrieved more pages than were discovered"
+        );
+        assert!(!result.yielded_nothing());
+        assert_eq!(result.error_count(), 0, "every fetch should have succeeded");
+        assert_eq!(result.success_rate(), 1.0);
     }
 }

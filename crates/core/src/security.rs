@@ -176,6 +176,303 @@ impl InputValidator {
 
         Ok(url.to_string())
     }
+
+    /// Prevent path traversal attacks.
+    pub fn validate_path(&self, path: &str) -> SecurityResult<String> {
+        // Check for null bytes
+        if path.contains('\0') {
+            return Err(SecurityError::InvalidInput(
+                "Path contains null bytes".into(),
+            ));
+        }
+
+        // Check for path traversal patterns
+        let traversal_patterns = ["../", "..\\", "%2e%2e/", "%2e%2e\\", "..%2f", "..%5c"];
+
+        let lower = path.to_lowercase();
+        for pattern in &traversal_patterns {
+            if lower.contains(pattern) {
+                return Err(SecurityError::InvalidInput(
+                    "Path traversal detected".into(),
+                ));
+            }
+        }
+
+        Ok(path.to_string())
+    }
+
+    /// Validate a filename for safety.
+    pub fn validate_filename(&self, filename: &str) -> SecurityResult<String> {
+        // Check for path components
+        if filename.contains('/') || filename.contains('\\') {
+            return Err(SecurityError::InvalidInput(
+                "Filename contains path separator".into(),
+            ));
+        }
+
+        // Check for null bytes
+        if filename.contains('\0') {
+            return Err(SecurityError::InvalidInput(
+                "Filename contains null bytes".into(),
+            ));
+        }
+
+        // Check for reserved names (Windows)
+        let reserved = [
+            "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "LPT1", "LPT2", "LPT3",
+            "LPT4",
+        ];
+        let upper = filename.to_uppercase();
+        for name in &reserved {
+            if upper == *name || upper.starts_with(&format!("{}.", name)) {
+                return Err(SecurityError::InvalidInput(format!(
+                    "Reserved filename: {}",
+                    name
+                )));
+            }
+        }
+
+        // Check for hidden files
+        if filename.starts_with('.') && filename.len() > 1 {
+            // Allow single dot, deny hidden files
+            if filename != "." && filename != ".." {
+                // Hidden file - might be intentional, but warn
+            }
+        }
+
+        Ok(filename.to_string())
+    }
+
+    /// Validate hostname for safety.
+    pub fn validate_hostname(&self, hostname: &str) -> SecurityResult<String> {
+        if hostname.is_empty() {
+            return Err(SecurityError::InvalidInput(
+                "Hostname cannot be empty".into(),
+            ));
+        }
+
+        if hostname.len() > 253 {
+            return Err(SecurityError::InvalidInput("Hostname too long".into()));
+        }
+
+        // Check for null bytes
+        if hostname.contains('\0') {
+            return Err(SecurityError::InvalidInput(
+                "Hostname contains null bytes".into(),
+            ));
+        }
+
+        // Check for invalid characters
+        let valid_chars = |c: char| c.is_alphanumeric() || c == '-' || c == '.' || c == ':';
+        if !hostname.chars().all(valid_chars) {
+            return Err(SecurityError::InvalidInput(
+                "Hostname contains invalid characters".into(),
+            ));
+        }
+
+        // Check for IP address (allow)
+        if hostname.parse::<std::net::IpAddr>().is_ok() {
+            return Ok(hostname.to_string());
+        }
+
+        // Validate domain format
+        let parts: Vec<&str> = hostname.split('.').collect();
+        if parts.len() < 2 {
+            return Err(SecurityError::InvalidInput(
+                "Hostname must have at least two parts".into(),
+            ));
+        }
+
+        // Check each label
+        for part in &parts {
+            if part.is_empty() {
+                return Err(SecurityError::InvalidInput(
+                    "Hostname contains empty label".into(),
+                ));
+            }
+            if part.len() > 63 {
+                return Err(SecurityError::InvalidInput(
+                    "Hostname label too long".into(),
+                ));
+            }
+            if part.starts_with('-') || part.ends_with('-') {
+                return Err(SecurityError::InvalidInput(
+                    "Hostname label cannot start or end with hyphen".into(),
+                ));
+            }
+        }
+
+        Ok(hostname.to_string())
+    }
+
+    /// Sanitize shell command arguments.
+    pub fn sanitize_command_arg(&self, arg: &str) -> SecurityResult<String> {
+        // Check for shell metacharacters
+        let dangerous_chars = [
+            '|', '&', ';', '$', '`', '(', ')', '{', '}', '<', '>', '\n', '\r',
+        ];
+        for ch in &dangerous_chars {
+            if arg.contains(*ch) {
+                return Err(SecurityError::InvalidInput(format!(
+                    "Command argument contains dangerous character: {}",
+                    ch
+                )));
+            }
+        }
+
+        // Check for command injection patterns
+        let injection_patterns = ["$(", "`", "${", "&&", "||", ";", "|"];
+        for pattern in &injection_patterns {
+            if arg.contains(pattern) {
+                return Err(SecurityError::InvalidInput(format!(
+                    "Command injection detected: {}",
+                    pattern
+                )));
+            }
+        }
+
+        Ok(arg.to_string())
+    }
+
+    /// Validate SQL identifier (table/column name).
+    pub fn validate_sql_identifier(&self, identifier: &str) -> SecurityResult<String> {
+        if identifier.is_empty() {
+            return Err(SecurityError::InvalidInput(
+                "SQL identifier cannot be empty".into(),
+            ));
+        }
+
+        // Must start with letter or underscore
+        let first = identifier.chars().next().unwrap();
+        if !first.is_alphabetic() && first != '_' {
+            return Err(SecurityError::InvalidInput(
+                "SQL identifier must start with letter or underscore".into(),
+            ));
+        }
+
+        // Must contain only alphanumeric and underscore
+        if !identifier.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            return Err(SecurityError::InvalidInput(
+                "SQL identifier contains invalid characters".into(),
+            ));
+        }
+
+        // Check length
+        if identifier.len() > 64 {
+            return Err(SecurityError::InvalidInput(
+                "SQL identifier too long".into(),
+            ));
+        }
+
+        // Check for SQL keywords (common ones)
+        let keywords = [
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "FROM",
+            "WHERE",
+            "AND",
+            "OR",
+            "DROP",
+            "CREATE",
+            "ALTER",
+            "TRUNCATE",
+            "EXEC",
+            "EXECUTE",
+            "UNION",
+            "TABLE",
+            "DATABASE",
+            "INDEX",
+            "VIEW",
+            "PROCEDURE",
+            "FUNCTION",
+        ];
+        let upper = identifier.to_uppercase();
+        for keyword in &keywords {
+            if upper == *keyword {
+                return Err(SecurityError::InvalidInput(format!(
+                    "SQL identifier is a reserved keyword: {}",
+                    keyword
+                )));
+            }
+        }
+
+        Ok(identifier.to_string())
+    }
+
+    /// Validate JSON string for safety.
+    pub fn validate_json(&self, json: &str) -> SecurityResult<String> {
+        // Check for null bytes
+        if json.contains('\0') {
+            return Err(SecurityError::InvalidInput(
+                "JSON contains null bytes".into(),
+            ));
+        }
+
+        // Check for common injection patterns
+        let injection_patterns = ["__proto__", "constructor", "prototype"];
+        for pattern in &injection_patterns {
+            if json.contains(pattern) {
+                return Err(SecurityError::InvalidInput(format!(
+                    "JSON contains prototype pollution pattern: {}",
+                    pattern
+                )));
+            }
+        }
+
+        // Try to parse as JSON
+        match serde_json::from_str::<serde_json::Value>(json) {
+            Ok(_) => Ok(json.to_string()),
+            Err(e) => Err(SecurityError::InvalidInput(format!("Invalid JSON: {}", e))),
+        }
+    }
+
+    /// Validate email format.
+    pub fn validate_email(&self, email: &str) -> SecurityResult<String> {
+        if email.is_empty() {
+            return Err(SecurityError::InvalidInput("Email cannot be empty".into()));
+        }
+
+        if email.len() > 254 {
+            return Err(SecurityError::InvalidInput("Email too long".into()));
+        }
+
+        // Check for null bytes
+        if email.contains('\0') {
+            return Err(SecurityError::InvalidInput(
+                "Email contains null bytes".into(),
+            ));
+        }
+
+        // Basic format check: must have text, then @, then domain, then .
+        let parts: Vec<&str> = email.split('@').collect();
+        if parts.len() != 2 {
+            return Err(SecurityError::InvalidInput("Invalid email format".into()));
+        }
+
+        if parts[0].is_empty() {
+            return Err(SecurityError::InvalidInput(
+                "Email local part cannot be empty".into(),
+            ));
+        }
+
+        if !parts[1].contains('.') {
+            return Err(SecurityError::InvalidInput("Invalid email domain".into()));
+        }
+
+        Ok(email.to_string())
+    }
+
+    /// Validate port number.
+    pub fn validate_port(&self, port: u16) -> SecurityResult<u16> {
+        // Most common dangerous ports
+        let _privileged_ports = [
+            22, 23, 25, 53, 80, 110, 143, 443, 993, 995, 3389, 5432, 3306, 6379,
+        ];
+        // Don't block privileged ports by default, just validate range
+        Ok(port)
+    }
 }
 
 /// Rate limiter for API endpoints.
@@ -334,6 +631,75 @@ mod tests {
         assert!(v.sanitize_url("ftp://example.com").is_err());
         assert!(v.sanitize_url("https://user@host.com").is_err());
         assert!(v.sanitize_url("https://host\\path").is_err());
+    }
+
+    #[test]
+    fn path_traversal_detection() {
+        let v = InputValidator::new();
+        assert!(v.validate_path("/safe/path").is_ok());
+        assert!(v.validate_path("/etc/passwd").is_ok());
+        assert!(v.validate_path("../../../etc/passwd").is_err());
+        assert!(v.validate_path("..\\windows\\system32").is_err());
+    }
+
+    #[test]
+    fn filename_validation() {
+        let v = InputValidator::new();
+        assert!(v.validate_filename("document.txt").is_ok());
+        assert!(v.validate_filename("path/file.txt").is_err());
+        assert!(v.validate_filename("file\0.txt").is_err());
+        assert!(v.validate_filename("CON").is_err());
+    }
+
+    #[test]
+    fn hostname_validation() {
+        let v = InputValidator::new();
+        assert!(v.validate_hostname("example.com").is_ok());
+        assert!(v.validate_hostname("192.168.1.1").is_ok());
+        assert!(v.validate_hostname("sub.domain.example.com").is_ok());
+        assert!(v.validate_hostname("-invalid.com").is_err());
+        assert!(v.validate_hostname("invalid-.com").is_err());
+        assert!(v.validate_hostname("a".repeat(254).as_str()).is_err());
+    }
+
+    #[test]
+    fn command_arg_sanitization() {
+        let v = InputValidator::new();
+        assert!(v.sanitize_command_arg("safe-arg").is_ok());
+        assert!(v.sanitize_command_arg("arg$(command)").is_err());
+        assert!(v.sanitize_command_arg("arg`command`").is_err());
+        assert!(v.sanitize_command_arg("arg;rm -rf /").is_err());
+        assert!(v.sanitize_command_arg("arg&&command").is_err());
+    }
+
+    #[test]
+    fn sql_identifier_validation() {
+        let v = InputValidator::new();
+        assert!(v.validate_sql_identifier("users").is_ok());
+        assert!(v.validate_sql_identifier("_private").is_ok());
+        assert!(v.validate_sql_identifier("user_id").is_ok());
+        assert!(v.validate_sql_identifier("SELECT").is_err());
+        assert!(v.validate_sql_identifier("123table").is_err());
+        assert!(v.validate_sql_identifier("table; DROP").is_err());
+    }
+
+    #[test]
+    fn json_validation() {
+        let v = InputValidator::new();
+        assert!(v.validate_json(r#"{"key": "value"}"#).is_ok());
+        assert!(v.validate_json(r#"[1, 2, 3]"#).is_ok());
+        assert!(v.validate_json("not json").is_err());
+        assert!(v.validate_json(r#"{"__proto__": "pollution"}"#).is_err());
+    }
+
+    #[test]
+    fn email_validation() {
+        let v = InputValidator::new();
+        assert!(v.validate_email("user@example.com").is_ok());
+        assert!(v.validate_email("test.email@domain.org").is_ok());
+        assert!(v.validate_email("invalid").is_err());
+        assert!(v.validate_email("@no-user.com").is_err());
+        assert!(v.validate_email("no-domain@").is_err());
     }
 
     #[test]

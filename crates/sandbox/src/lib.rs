@@ -1,3 +1,42 @@
+//! **This crate does not sandbox anything. Do not use it to run untrusted code.**
+//!
+//! The name is the problem. `LocalSandbox` spawns a real subprocess with
+//! [`tokio::process::Command`] inside the calling process, so the child inherits
+//! the server's uid, filesystem access, network access and environment. It is a
+//! process launcher with an audit log, not a sandbox.
+//!
+//! Concretely, of the six fields on [`ResourceLimits`]:
+//!
+//! | Field | Enforced during execution? |
+//! |---|---|
+//! | `max_memory_bytes` | No. Never read outside constructors and tests. `ExecutionResult::memory_used_bytes` is hardcoded `0`. |
+//! | `max_disk_bytes` | No. Never read at all outside its definition. |
+//! | `max_network_connections` | No. Never read outside constructors and tests. |
+//! | `allowed_hosts` / `blocked_hosts` | No. [`ResourceLimits::is_host_allowed`] is called only from tests. A child process is not constrained by its parent's idea of a host allowlist anyway. |
+//! | `max_cpu_time_ms` | Measured *after* the fact. `execute` awaits `cmd.output()` to completion and only then compares the elapsed duration, so a subprocess that runs forever is reported as a `Timeout` once it eventually exits — after having already consumed everything it wanted. |
+//!
+//! [`SandboxPolicy::is_command_allowed`] is a string allowlist applied before the
+//! subprocess starts. That part does work, but it is a command filter, not
+//! isolation: an allowed `python3` gets everything the server has.
+//!
+//! # Why it is here
+//!
+//! `s.txt` Phase 25 asks for a WASM sandbox with capability-based permissions, and
+//! Phase 26 states "Never embed arbitrary Python execution directly into the main
+//! API process." Wiring this crate into a plugin host would do exactly what Phase 26
+//! forbids, while looking like the opposite because the type is called `Sandbox`.
+//!
+//! It is retained, unused, because it is referenced by `spectrum-plugins` and
+//! deleting either is a call for the maintainers rather than a mechanical change.
+//!
+//! # If you need to execute a plugin
+//!
+//! Do not use this crate. Either implement Phase 25 properly — a WASM runtime with
+//! fuel/memory limits, an explicit capability set, and no ambient filesystem or
+//! network — or run the plugin in a separate process under OS-level isolation
+//! (namespaces, seccomp, cgroups) with a protocol boundary. Until one of those
+//! exists, a plugin host must not accept third-party code.
+
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use thiserror::Error;

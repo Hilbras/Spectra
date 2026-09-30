@@ -111,6 +111,7 @@ pub fn common_port_service(port: u16) -> Option<&'static str> {
 }
 
 /// Port scanner for discovering open ports.
+#[derive(Debug, Clone)]
 pub struct PortScanner {
     /// Timeout for port connections in milliseconds.
     timeout_ms: u64,
@@ -133,6 +134,22 @@ impl PortScanner {
             timeout_ms,
             max_concurrent,
         }
+    }
+
+    /// Validates port range.
+    fn validate_port_range(start: u16, end: u16) -> crate::NetworkResult<()> {
+        if start > end {
+            return Err(crate::NetworkError::InvalidInput(format!(
+                "Invalid port range: {}-{}",
+                start, end
+            )));
+        }
+        if (end - start) as usize > 65535 {
+            return Err(crate::NetworkError::InvalidInput(
+                "Port range too large".to_string(),
+            ));
+        }
+        Ok(())
     }
 
     /// Scans a single port.
@@ -167,7 +184,14 @@ impl PortScanner {
     }
 
     /// Scans a range of ports on an IP address.
-    pub async fn scan_ports(&self, ip: IpAddr, start: u16, end: u16) -> Vec<PortInfo> {
+    pub async fn scan_ports(
+        &self,
+        ip: IpAddr,
+        start: u16,
+        end: u16,
+    ) -> crate::NetworkResult<Vec<PortInfo>> {
+        Self::validate_port_range(start, end)?;
+
         let mut results = Vec::new();
         let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(self.max_concurrent));
         let mut handles = Vec::new();
@@ -193,7 +217,7 @@ impl PortScanner {
 
         // Sort by port number
         results.sort_by_key(|p| p.port);
-        results
+        Ok(results)
     }
 
     /// Scans common ports on an IP address.

@@ -42,6 +42,9 @@ pub enum SpectraError {
     #[error("Serialization error: {0}")]
     Serialization(String),
 
+    #[error("Security error: {0}")]
+    Security(String),
+
     #[error("Plugin error: {plugin}: {error}")]
     Plugin { plugin: String, error: String },
 
@@ -76,6 +79,7 @@ impl SpectraError {
             Self::Network(_) => ErrorKind::Network,
             Self::Io(_) => ErrorKind::Io,
             Self::Serialization(_) => ErrorKind::Serialization,
+            Self::Security(_) => ErrorKind::Security,
             Self::Plugin { .. } => ErrorKind::Plugin,
             Self::Worker(_) => ErrorKind::Worker,
             Self::Configuration(_) => ErrorKind::Configuration,
@@ -110,6 +114,7 @@ pub enum ErrorKind {
     Network,
     Io,
     Serialization,
+    Security,
     Plugin,
     Worker,
     Configuration,
@@ -133,6 +138,7 @@ impl fmt::Display for ErrorKind {
             Self::Network => write!(f, "network"),
             Self::Io => write!(f, "io"),
             Self::Serialization => write!(f, "serialization"),
+            Self::Security => write!(f, "security"),
             Self::Plugin => write!(f, "plugin"),
             Self::Worker => write!(f, "worker"),
             Self::Configuration => write!(f, "configuration"),

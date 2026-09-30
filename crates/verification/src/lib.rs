@@ -254,9 +254,14 @@ impl VerificationEngine {
 
     fn select_method(&self, finding: &ManagedFinding) -> VerificationMethod {
         match finding.detection_source {
-            DetectionSource::SqlInjectionScanner | DetectionSource::XssScanner => {
-                VerificationMethod::ActiveScan
-            }
+            DetectionSource::SqlInjectionScanner
+            | DetectionSource::XssScanner
+            | DetectionSource::SsrfScanner
+            | DetectionSource::OpenRedirectScanner
+            | DetectionSource::PathTraversalScanner
+            | DetectionSource::CsrfScanner
+            | DetectionSource::XxeScanner
+            | DetectionSource::CorsScanner => VerificationMethod::ActiveScan,
             DetectionSource::DirSearchScanner => VerificationMethod::AutomatedTest,
             DetectionSource::Crawler => VerificationMethod::PassiveCheck,
             DetectionSource::Fingerprinter => VerificationMethod::PassiveCheck,

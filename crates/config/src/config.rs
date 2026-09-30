@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use spectra_core::SpectraError;
 use std::path::PathBuf;
+use tracing::warn;
 
 /// Configuration error type.
 #[derive(Debug, thiserror::Error)]
@@ -51,6 +52,20 @@ pub struct Config {
     pub telemetry: TelemetryConfig,
     pub worker: WorkerConfig,
     pub logging: LoggingConfig,
+    pub cors: CorsConfig,
+}
+
+/// Cross-origin policy for the HTTP API.
+///
+/// There is deliberately no default allowlist. A wildcard origin is unsafe for
+/// an API that authenticates with a bearer token the dashboard keeps in
+/// `localStorage`: any page on an allowed origin that is compromised can then
+/// read authenticated responses. An unset allowlist means "no cross-origin
+/// browser access", not "all origins".
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub struct CorsConfig {
+    /// Origins permitted to make credentialed cross-origin requests.
+    pub allowed_origins: Vec<String>,
 }
 
 #[allow(clippy::derivable_impls)]
@@ -68,6 +83,7 @@ impl Default for Config {
             telemetry: TelemetryConfig::default(),
             worker: WorkerConfig::default(),
             logging: LoggingConfig::default(),
+            cors: CorsConfig::default(),
         }
     }
 }
@@ -173,6 +189,16 @@ pub struct ScannerConfig {
     pub max_concurrent: usize,
     pub default_timeout: u64,
     pub rate_limit_per_second: u32,
+    /// Permit scans whose target resolves to a loopback, private, link-local or
+    /// cloud-metadata address.
+    ///
+    /// Off by default. A scan makes the server issue outbound requests to a
+    /// target the caller chose, so an unvalidated target URL is a server-side
+    /// request forgery primitive: `POST /api/v1/scans` with
+    /// `http://169.254.169.254/` reads the cloud credentials of the machine
+    /// running the scanner. Operators who genuinely need to scan internal
+    /// hosts can opt in, at the cost of that protection.
+    pub allow_internal_targets: bool,
 }
 
 impl Default for ScannerConfig {
@@ -181,6 +207,7 @@ impl Default for ScannerConfig {
             max_concurrent: 10,
             default_timeout: 300,
             rate_limit_per_second: 50,
+            allow_internal_targets: false,
         }
     }
 }
@@ -319,6 +346,81 @@ impl Config {
         }
         if let Ok(val) = std::env::var("SPECTRA_LOG_LEVEL") {
             self.logging.level = val;
+        }
+        if let Ok(val) = std::env::var("SPECTRA_ALLOW_INTERNAL_TARGETS") {
+            self.scanner.allow_internal_targets = matches!(
+                val.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            );
+        }
+        self.apply_scan_limit_overrides(|name| std::env::var(name).ok());
+        // Comma-separated origin allowlist. Unset means no cross-origin access.
+        if let Ok(val) = std::env::var("SPECTRA_CORS_ORIGINS") {
+            self.cors.allowed_origins = val
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+        }
+    }
+
+    /// Ceilings on what a single scan may consume.
+    ///
+    /// These are the operator's, not the caller's: `POST /api/v1/scans` accepts
+    /// `max_depth`, `max_pages` and `timeout_secs` in the request body, and a
+    /// caller-supplied value may narrow a scan but never raise it above what is
+    /// configured here. Without a ceiling those request fields would be the only
+    /// bound on a crawl of a site the caller chose.
+    ///
+    /// Also covers `max_concurrent` and `rate_limit_per_second`, which were
+    /// declared on [`ScannerConfig`], given defaults, and asserted non-zero by a
+    /// test, but read by nothing at all. They now drive the `ResourceGovernor`
+    /// that bounds how many scans may run at once — the limit per scan says
+    /// nothing about how many scans are running.
+    ///
+    /// Split out from [`Config::apply_env_overrides`] and parameterised on the
+    /// lookup so the precedence and the malformed-value behaviour can be tested
+    /// directly. Reading the real environment from a test would mean either
+    /// `std::env::set_var` — which the workspace forbids, and which races other
+    /// tests in the same process regardless — or asserting nothing.
+    ///
+    /// A malformed value leaves the default in place rather than refusing to
+    /// start: a typo in an operator's ceiling should not take the scanner down.
+    fn apply_scan_limit_overrides(&mut self, lookup: impl Fn(&str) -> Option<String>) {
+        if let Some(raw) = lookup("SPECTRA_CRAWLER_MAX_PAGES") {
+            if let Ok(pages) = raw.parse() {
+                self.crawler.max_pages = pages;
+            } else {
+                warn!("Ignoring SPECTRA_CRAWLER_MAX_PAGES={raw:?}: not a number");
+            }
+        }
+        if let Some(raw) = lookup("SPECTRA_CRAWLER_MAX_DEPTH") {
+            if let Ok(depth) = raw.parse() {
+                self.crawler.max_depth = depth;
+            } else {
+                warn!("Ignoring SPECTRA_CRAWLER_MAX_DEPTH={raw:?}: not a number");
+            }
+        }
+        if let Some(raw) = lookup("SPECTRA_SCANNER_MAX_CONCURRENT") {
+            if let Ok(n) = raw.parse() {
+                self.scanner.max_concurrent = n;
+            } else {
+                warn!("Ignoring SPECTRA_SCANNER_MAX_CONCURRENT={raw:?}: not a number");
+            }
+        }
+        if let Some(raw) = lookup("SPECTRA_SCANNER_RATE_LIMIT_PER_SECOND") {
+            if let Ok(n) = raw.parse() {
+                self.scanner.rate_limit_per_second = n;
+            } else {
+                warn!("Ignoring SPECTRA_SCANNER_RATE_LIMIT_PER_SECOND={raw:?}: not a number");
+            }
+        }
+        if let Some(raw) = lookup("SPECTRA_SCANNER_DEFAULT_TIMEOUT") {
+            if let Ok(timeout) = raw.parse() {
+                self.scanner.default_timeout = timeout;
+            } else {
+                warn!("Ignoring SPECTRA_SCANNER_DEFAULT_TIMEOUT={raw:?}: not a number");
+            }
         }
     }
 
@@ -518,7 +620,7 @@ port = 3000
 
     #[test]
     fn config_source_variants() {
-        let sources = vec![
+        let sources = [
             ConfigSource::Default,
             ConfigSource::File(PathBuf::from("/tmp/config.toml")),
             ConfigSource::Environment,
@@ -544,5 +646,123 @@ port = 3000
         let err = ConfigError::Missing("test".into());
         let spectra_err: SpectraError = err.into();
         assert_eq!(spectra_err.kind(), spectra_core::ErrorKind::Configuration);
+    }
+}
+
+#[cfg(test)]
+mod limit_override_tests {
+    use super::*;
+
+    fn lookup<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |name| {
+            pairs
+                .iter()
+                .find(|(k, _)| *k == name)
+                .map(|(_, v)| (*v).to_string())
+        }
+    }
+
+    /// The ceilings are the operator's, so they have to be settable without a
+    /// rebuild. Before these overrides existed, the only bound on a crawl was a
+    /// hardcoded `CrawlerConfig::default()` inside the engine.
+    #[test]
+    fn ceilings_can_be_set_from_the_environment() {
+        let mut config = Config::default();
+
+        config.apply_scan_limit_overrides(lookup(&[
+            ("SPECTRA_CRAWLER_MAX_PAGES", "25"),
+            ("SPECTRA_CRAWLER_MAX_DEPTH", "2"),
+            ("SPECTRA_SCANNER_DEFAULT_TIMEOUT", "45"),
+            ("SPECTRA_SCANNER_MAX_CONCURRENT", "3"),
+            ("SPECTRA_SCANNER_RATE_LIMIT_PER_SECOND", "7"),
+        ]));
+
+        assert_eq!(config.crawler.max_pages, 25);
+        assert_eq!(config.crawler.max_depth, 2);
+        assert_eq!(config.scanner.default_timeout, 45);
+        assert_eq!(config.scanner.max_concurrent, 3);
+        assert_eq!(config.scanner.rate_limit_per_second, 7);
+    }
+
+    /// The two limits that bound concurrent scans were unreachable before this.
+    /// Nothing read them, so an operator setting `SPECTRA_SCANNER_MAX_CONCURRENT=1`
+    /// got no effect whatsoever.
+    #[test]
+    fn the_concurrency_and_rate_limits_are_settable() {
+        let mut config = Config::default();
+
+        config.apply_scan_limit_overrides(lookup(&[
+            ("SPECTRA_SCANNER_MAX_CONCURRENT", "2"),
+            ("SPECTRA_SCANNER_RATE_LIMIT_PER_SECOND", "9"),
+        ]));
+
+        assert_eq!(config.scanner.max_concurrent, 2);
+        assert_eq!(config.scanner.rate_limit_per_second, 9);
+    }
+
+    #[test]
+    fn a_malformed_concurrency_limit_leaves_the_default() {
+        let mut config = Config::default();
+        let default = config.scanner.max_concurrent;
+
+        config.apply_scan_limit_overrides(lookup(&[("SPECTRA_SCANNER_MAX_CONCURRENT", "lots")]));
+
+        assert_eq!(config.scanner.max_concurrent, default);
+    }
+
+    #[test]
+    fn an_unset_ceiling_leaves_the_default() {
+        let mut config = Config::default();
+        let before = (
+            config.crawler.max_pages,
+            config.crawler.max_depth,
+            config.scanner.default_timeout,
+        );
+
+        config.apply_scan_limit_overrides(lookup(&[]));
+
+        assert_eq!(
+            (
+                config.crawler.max_pages,
+                config.crawler.max_depth,
+                config.scanner.default_timeout
+            ),
+            before
+        );
+    }
+
+    /// A typo must not take the scanner down, and must not silently become
+    /// something other than the default either.
+    #[test]
+    fn a_malformed_ceiling_leaves_the_default_in_place() {
+        let mut config = Config::default();
+        let default_pages = config.crawler.max_pages;
+
+        config.apply_scan_limit_overrides(lookup(&[("SPECTRA_CRAWLER_MAX_PAGES", "lots")]));
+
+        assert_eq!(config.crawler.max_pages, default_pages);
+    }
+
+    #[test]
+    fn a_zero_ceiling_is_honoured_because_it_is_valid() {
+        // Distinct from the malformed case: 0 parses, and refusing it would
+        // leave the operator with no way to express "scan nothing".
+        let mut config = Config::default();
+
+        config.apply_scan_limit_overrides(lookup(&[("SPECTRA_CRAWLER_MAX_PAGES", "0")]));
+
+        assert_eq!(config.crawler.max_pages, 0);
+    }
+
+    #[test]
+    fn a_negative_ceiling_leaves_the_default() {
+        // `u32::parse` rejects it, so an operator who writes -1 gets the default
+        // rather than a ceiling that is not a ceiling.
+        let mut config = Config::default();
+        let default_depth = config.crawler.max_depth;
+
+        config.apply_scan_limit_overrides(lookup(&[("SPECTRA_CRAWLER_MAX_DEPTH", "-1")]));
+
+        assert_eq!(config.crawler.max_depth, default_depth);
     }
 }

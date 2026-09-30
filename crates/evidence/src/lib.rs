@@ -690,7 +690,7 @@ mod tests {
     fn redaction_policy_default() {
         let policy = RedactionPolicy::default_sensitive();
         assert_eq!(policy.name, "default-sensitive");
-        assert!(policy.patterns.len() > 0);
+        assert!(!policy.patterns.is_empty());
     }
 
     #[test]
@@ -809,7 +809,7 @@ mod tests {
             EvidenceData::Text("200 OK".into()),
         );
 
-        let id = evidence.id.clone();
+        let id = evidence.id;
         store.save(evidence).await.unwrap();
 
         let found = store.get_by_id(&id).await.unwrap();
@@ -835,7 +835,7 @@ mod tests {
             EvidenceData::Text("data".into()),
         );
 
-        let id = evidence.id.clone();
+        let id = evidence.id;
         store.save(evidence).await.unwrap();
         assert_eq!(store.count().await, 1);
 

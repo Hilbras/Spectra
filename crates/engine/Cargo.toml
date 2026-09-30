@@ -19,10 +19,12 @@ spectra-events = { workspace = true }
 spectra-config = { workspace = true }
 spectra-scheduler = { workspace = true }
 spectra-evidence = { workspace = true }
+spectra-verification = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 

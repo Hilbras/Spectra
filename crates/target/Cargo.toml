@@ -17,6 +17,8 @@ tracing = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 chrono = { workspace = true }
+regex = { workspace = true }
+once_cell = "1"
 
 [lints]
 workspace = true

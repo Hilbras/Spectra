@@ -13,8 +13,11 @@ thiserror = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
 async-trait = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 toml = { workspace = true }
+url = "2"
+ipnet = "2"
 
 [lints]
 workspace = true

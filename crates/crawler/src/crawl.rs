@@ -77,8 +77,18 @@ pub struct CrawlResult {
     pub target_id: Id<TargetId>,
     pub pages: Vec<CrawledPage>,
     pub total_discovered: u32,
+    /// URLs that were fetched successfully.
+    ///
+    /// Not the same as `total_discovered`, and conflating the two is what made
+    /// [`CrawlResult::success_rate`] always return 1.0 — a crawl in which every
+    /// request failed reported a perfect success rate.
     pub total_crawled: u32,
-    pub errors: u32,
+    /// Why individual fetches failed.
+    ///
+    /// A bare count is not enough to act on: it cannot distinguish a target that
+    /// was down, a URL that 404s, and a bug in this crawler. The reason is kept
+    /// so an operator can tell a broken scan from a broken target.
+    pub errors: Vec<String>,
 }
 
 impl CrawlResult {
@@ -101,11 +111,28 @@ impl CrawlResult {
         self.pages.iter().flat_map(|p| &p.forms).collect()
     }
 
+    pub fn error_count(&self) -> usize {
+        self.errors.len()
+    }
+
+    /// Fraction of discovered URLs that were actually fetched.
+    ///
+    /// Returns 0.0 when nothing was discovered, because "no URLs found" and
+    /// "all URLs fetched" are different outcomes and must not share a value.
     pub fn success_rate(&self) -> f64 {
         if self.total_discovered == 0 {
             return 0.0;
         }
         self.total_crawled as f64 / self.total_discovered as f64
+    }
+
+    /// Whether the crawl produced no pages at all.
+    ///
+    /// Every downstream stage consumes `pages`, so an empty crawl means the scan
+    /// had nothing to work with. Callers need to treat that as a failed scan, not
+    /// a clean one.
+    pub fn yielded_nothing(&self) -> bool {
+        self.pages.is_empty()
     }
 }
 
@@ -169,12 +196,49 @@ mod tests {
             ],
             total_discovered: 10,
             total_crawled: 8,
-            errors: 2,
+            errors: vec!["https://example.com/a: timeout".to_string()],
         };
 
         assert_eq!(result.pages_crawled(), 2);
         assert_eq!(result.pages_with_status(200).len(), 1);
         assert_eq!(result.pages_with_status(404).len(), 1);
         assert!((result.success_rate() - 0.8).abs() < f64::EPSILON);
+        assert_eq!(result.error_count(), 1);
+        assert!(!result.yielded_nothing());
+    }
+
+    /// The regression: `total_crawled` used to be assigned `total_discovered`,
+    /// so a crawl in which every fetch failed reported `success_rate() == 1.0`.
+    #[test]
+    fn success_rate_is_not_one_when_every_fetch_fails() {
+        let result = CrawlResult {
+            target_id: spectra_core::Id::new(),
+            pages: Vec::new(),
+            total_discovered: 10,
+            total_crawled: 0,
+            errors: (0..10)
+                .map(|i| format!("https://example.com/{i}: refused"))
+                .collect(),
+        };
+
+        assert_eq!(result.success_rate(), 0.0);
+        assert_eq!(result.error_count(), 10);
+        assert!(
+            result.yielded_nothing(),
+            "a crawl with no pages must be recognisable as useless"
+        );
+    }
+
+    #[test]
+    fn a_crawl_with_nothing_discovered_is_not_a_success() {
+        let result = CrawlResult {
+            target_id: spectra_core::Id::new(),
+            pages: Vec::new(),
+            total_discovered: 0,
+            total_crawled: 0,
+            errors: Vec::new(),
+        };
+        assert_eq!(result.success_rate(), 0.0);
+        assert!(result.yielded_nothing());
     }
 }

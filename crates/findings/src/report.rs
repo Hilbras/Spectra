@@ -7,7 +7,39 @@ pub struct ReportGenerator;
 impl ReportGenerator {
     /// Generates a text summary of a findings report.
     pub fn text_summary(report: &FindingsReport) -> String {
+        Self::text_summary_with_coverage(report, "Completed", &[])
+    }
+
+    /// Generates a text summary that states what the scan actually covered.
+    ///
+    /// `coverage_status` and `errors` are rendered above the summary rather than
+    /// left to the caller, because a report that reads "Total: 0" over a scan
+    /// which never reached its target is a false negative presented as a clean
+    /// result — and the summary block is the part people read first, and the
+    /// part most likely to be pasted into a ticket.
+    ///
+    /// The parameters are plain strings rather than engine types so this crate
+    /// stays independent of the engine's status enum.
+    pub fn text_summary_with_coverage(
+        report: &FindingsReport,
+        coverage_status: &str,
+        errors: &[String],
+    ) -> String {
         let mut output = String::new();
+
+        if !errors.is_empty() {
+            output.push_str(&format!("Scan status: {coverage_status}\n"));
+            output.push_str(&format!(
+                "WARNING: this scan did not complete cleanly. {} failure(s) were \
+                 recorded, so the findings below are incomplete and their absence \
+                 is not evidence that the target is clean.\n",
+                errors.len()
+            ));
+            for error in errors {
+                output.push_str(&format!("  - {error}\n"));
+            }
+            output.push('\n');
+        }
 
         output.push_str("Findings Report\n");
         output.push_str("==============\n\n");
@@ -213,6 +245,12 @@ mod tests {
     use spectra_core::Id;
     use spectra_scanner::{Finding, VulnerabilityCategory};
 
+    /// A report with no findings — what a failed scan produces, and what reads
+    /// most like a clean result.
+    fn make_empty_report() -> FindingsReport {
+        FindingsReport::new(Id::new())
+    }
+
     fn make_report() -> FindingsReport {
         let target_id = Id::new();
         let mut report = FindingsReport::new(target_id);
@@ -258,6 +296,69 @@ mod tests {
         assert!(text.contains("Findings Report"));
         assert!(text.contains("SQLi"));
         assert!(text.contains("XSS"));
+    }
+
+    /// The false negative in its most quotable form: a report body reading
+    /// "Total: 0" over a scan that never reached the target looks exactly like a
+    /// clean result. The caveat has to be in the text, not just in a status field
+    /// the reader may not look at.
+    #[test]
+    fn a_report_from_an_incomplete_scan_says_so_before_the_summary() {
+        let report = make_empty_report();
+        let errors = vec![
+            "crawl: retrieved no pages from http://127.0.0.1:1/".to_string(),
+            "xss: Failed to fetch target".to_string(),
+        ];
+
+        let text = ReportGenerator::text_summary_with_coverage(&report, "Failed", &errors);
+
+        assert!(text.starts_with("Scan status: Failed"));
+        assert!(
+            text.contains("not evidence that the target is clean"),
+            "the caveat must state the conclusion explicitly, got:\n{text}"
+        );
+        assert!(text.contains("xss: Failed to fetch target"));
+
+        // The caveat must come before the counts, since the counts are what a
+        // reader quotes out of a report.
+        let caveat = text.find("WARNING").expect("a warning must be present");
+        let summary = text.find("Summary").expect("the summary must be present");
+        assert!(caveat < summary, "the warning must precede the summary");
+    }
+
+    #[test]
+    fn a_clean_report_carries_no_caveat() {
+        // The one result that should read as reassuring: if this started warning
+        // on success, the warning would be ignored everywhere.
+        let report = make_empty_report();
+        let text = ReportGenerator::text_summary_with_coverage(&report, "Completed", &[]);
+
+        assert!(!text.contains("WARNING"));
+        assert!(!text.contains("Scan status"));
+        assert!(text.contains("Total: 0"));
+        assert!(text.starts_with("Findings Report"));
+    }
+
+    #[test]
+    fn the_default_summary_is_unchanged_by_the_coverage_variant() {
+        // `text_summary` delegates with no errors, so existing output must be
+        // byte-identical to avoid changing reports that were already fine.
+        let report = make_report();
+        assert_eq!(
+            ReportGenerator::text_summary(&report),
+            ReportGenerator::text_summary_with_coverage(&report, "Completed", &[])
+        );
+    }
+
+    #[test]
+    fn a_partial_scan_is_labelled_partial_not_failed() {
+        let report = make_empty_report();
+        let text = ReportGenerator::text_summary_with_coverage(
+            &report,
+            "Partial",
+            &["xss: Failed to fetch target".to_string()],
+        );
+        assert!(text.starts_with("Scan status: Partial"));
     }
 
     #[test]

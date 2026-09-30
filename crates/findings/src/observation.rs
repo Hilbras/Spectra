@@ -212,6 +212,53 @@ pub trait ObservationStore: Send + Sync {
     async fn count(&self, scan_id: &str) -> ObservationResult<usize>;
 }
 
+/// A shared handle to an observation store is itself an observation store.
+///
+/// See the note on the `FindingsManager` implementation for `Arc<T>`: the engine
+/// and the API both need to read the same observations, and duplicating the store
+/// meant the API's observations endpoint was permanently empty.
+#[async_trait::async_trait]
+impl<T> ObservationStore for std::sync::Arc<T>
+where
+    T: ObservationStore + ?Sized,
+{
+    async fn save(&self, observation: Observation) -> ObservationResult<()> {
+        (**self).save(observation).await
+    }
+
+    async fn get(&self, id: &str) -> ObservationResult<Observation> {
+        (**self).get(id).await
+    }
+
+    async fn list_by_scan(&self, scan_id: &str) -> ObservationResult<Vec<Observation>> {
+        (**self).list_by_scan(scan_id).await
+    }
+
+    async fn list_by_type(
+        &self,
+        scan_id: &str,
+        observation_type: &ObservationType,
+    ) -> ObservationResult<Vec<Observation>> {
+        (**self).list_by_type(scan_id, observation_type).await
+    }
+
+    async fn list_by_severity(
+        &self,
+        scan_id: &str,
+        severity: &ObservationSeverity,
+    ) -> ObservationResult<Vec<Observation>> {
+        (**self).list_by_severity(scan_id, severity).await
+    }
+
+    async fn delete(&self, id: &str) -> ObservationResult<()> {
+        (**self).delete(id).await
+    }
+
+    async fn count(&self, scan_id: &str) -> ObservationResult<usize> {
+        (**self).count(scan_id).await
+    }
+}
+
 /// In-memory observation store.
 #[derive(Clone)]
 pub struct InMemoryObservationStore {
@@ -229,6 +276,18 @@ impl InMemoryObservationStore {
         Self {
             observations: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         }
+    }
+
+    /// Every observation held, across all scans.
+    ///
+    /// The [`ObservationStore::count`] trait method is per-scan, so a
+    /// whole-inventory count has no trait-level home. Adding one to the trait
+    /// would force every implementor to provide it, which a persistent store
+    /// cannot do cheaply or, for some backends, at all. It is an inherent method
+    /// for now; when the backing store is persistent this is the point at which
+    /// the trait needs a `count_all` with a real implementation per backend.
+    pub async fn count_all(&self) -> usize {
+        self.observations.read().await.len()
     }
 }
 

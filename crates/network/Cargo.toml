@@ -12,6 +12,7 @@ spectra-target = { workspace = true }
 spectra-config = { workspace = true }
 spectra-events = { workspace = true }
 async-trait = { workspace = true }
+futures = "0.3"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }

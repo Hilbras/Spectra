@@ -1,10 +1,22 @@
+pub mod cors;
+pub mod csrf;
 pub mod dirsearch;
+pub mod open_redirect;
+pub mod path_traversal;
 pub mod sqli;
+pub mod ssrf;
 pub mod xss;
+pub mod xxe;
 
+pub use cors::CorsScanner;
+pub use csrf::CsrfScanner;
 pub use dirsearch::DirSearchScanner;
+pub use open_redirect::OpenRedirectScanner;
+pub use path_traversal::PathTraversalScanner;
 pub use sqli::SqlInjectionScanner;
+pub use ssrf::SsrfScanner;
 pub use xss::XssScanner;
+pub use xxe::XxeScanner;
 
 use serde::{Deserialize, Serialize};
 use spectra_core::Id;

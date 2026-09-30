@@ -1,4 +1,21 @@
+use once_cell::sync::Lazy;
+use regex::Regex;
+
 use crate::models::{Scope, ScopeRuleType, TargetError, TargetResult};
+
+/// Private IP ranges (RFC 1918, loopback, link-local).
+static PRIVATE_IP_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
+    vec![
+        Regex::new(r"^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$").unwrap(),
+        Regex::new(r"^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$").unwrap(),
+        Regex::new(r"^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$").unwrap(),
+        Regex::new(r"^192\.168\.\d{1,3}\.\d{1,3}$").unwrap(),
+        Regex::new(r"^169\.254\.\d{1,3}\.\d{1,3}$").unwrap(),
+        Regex::new(r"^0\.0\.0\.0$").unwrap(),
+        Regex::new(r"^::1$").unwrap(),
+        Regex::new(r"^fe80:.*").unwrap(),
+    ]
+});
 
 /// Engine for validating operations against scopes.
 ///
@@ -20,14 +37,12 @@ impl ScopeEngine {
 
     /// Validates that a URL is within the given scope.
     pub fn validate_url(scope: &Scope, url: &str) -> TargetResult<()> {
-        // Extract host from URL for validation
         let host = Self::extract_host(url)?;
         Self::validate_target(scope, &host)
     }
 
     /// Validates that a port is allowed by the scope.
     pub fn validate_port(scope: &Scope, port: u16) -> TargetResult<()> {
-        // Check if any port rules exist
         let has_port_rules = scope
             .allowed
             .iter()
@@ -35,7 +50,7 @@ impl ScopeEngine {
             .any(|rule| rule.rule_type == ScopeRuleType::Port);
 
         if !has_port_rules {
-            return Ok(()); // No port restrictions
+            return Ok(());
         }
 
         let port_str = port.to_string();
@@ -51,7 +66,6 @@ impl ScopeEngine {
 
     /// Validates that a path is within the given scope.
     pub fn validate_path(scope: &Scope, path: &str) -> TargetResult<()> {
-        // Check if any path rules exist
         let has_path_rules = scope
             .allowed
             .iter()
@@ -59,7 +73,7 @@ impl ScopeEngine {
             .any(|rule| rule.rule_type == ScopeRuleType::Path);
 
         if !has_path_rules {
-            return Ok(()); // No path restrictions
+            return Ok(());
         }
 
         if scope.is_allowed(path) {
@@ -79,20 +93,82 @@ impl ScopeEngine {
         _method: &str,
         path: &str,
     ) -> TargetResult<()> {
-        // Validate the URL/host
         Self::validate_url(scope, url)?;
-
-        // Validate the path
         Self::validate_path(scope, path)?;
-
-        // Method restrictions could be added here in the future
-
         Ok(())
     }
 
+    /// Checks if an IP address is a private/reserved address.
+    pub fn is_private_ip(ip: &str) -> bool {
+        PRIVATE_IP_PATTERNS.iter().any(|re| re.is_match(ip))
+    }
+
+    /// Validates that an IP address is not private/reserved.
+    pub fn validate_public_ip(ip: &str) -> TargetResult<()> {
+        if Self::is_private_ip(ip) {
+            Err(TargetError::ScopeViolation(format!(
+                "IP address '{}' is a private/reserved address and cannot be scanned",
+                ip
+            )))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Validates a scope with regex pattern support.
+    pub fn validate_with_regex(scope: &Scope, value: &str) -> TargetResult<()> {
+        // Check exclusions first
+        for rule in &scope.excluded {
+            if Self::rule_matches_regex(rule, value) {
+                return Err(TargetError::ScopeViolation(format!(
+                    "Value '{}' matches exclusion rule: {}",
+                    value, rule.value
+                )));
+            }
+        }
+
+        // Check inclusions
+        if scope.allowed.is_empty() {
+            return Ok(());
+        }
+
+        let any_match = scope
+            .allowed
+            .iter()
+            .any(|rule| Self::rule_matches_regex(rule, value));
+
+        if any_match {
+            Ok(())
+        } else {
+            Err(TargetError::ScopeViolation(format!(
+                "Value '{}' is not within the allowed scope",
+                value
+            )))
+        }
+    }
+
+    /// Checks if a rule matches a value, supporting regex patterns.
+    fn rule_matches_regex(rule: &crate::models::ScopeRule, value: &str) -> bool {
+        match rule.rule_type {
+            ScopeRuleType::Allow | ScopeRuleType::Exclude => {
+                // Try regex match if the pattern contains regex chars
+                if rule.value.starts_with("regex:") {
+                    let pattern = &rule.value[6..];
+                    if let Ok(re) = Regex::new(pattern) {
+                        return re.is_match(value);
+                    }
+                    return false;
+                }
+
+                // Fallback to standard matching
+                rule.matches(value)
+            }
+            _ => rule.matches(value),
+        }
+    }
+
     /// Extracts the host from a URL.
-    fn extract_host(url: &str) -> TargetResult<String> {
-        // Handle URLs with protocol
+    pub fn extract_host(url: &str) -> TargetResult<String> {
         if let Some(rest) = url.strip_prefix("http://") {
             return Ok(rest
                 .split('/')
@@ -114,7 +190,6 @@ impl ScopeEngine {
                 .to_string());
         }
 
-        // Handle plain hostnames
         if let Some(host) = url.split('/').next() {
             let host = host.split(':').next().unwrap_or(host);
             if !host.is_empty() {
@@ -245,5 +320,43 @@ mod tests {
         assert_eq!(summary.allow_rules, 2);
         assert_eq!(summary.exclude_rules, 1);
         assert!(summary.has_rate_limits);
+    }
+
+    #[test]
+    fn private_ip_detection() {
+        assert!(ScopeEngine::is_private_ip("127.0.0.1"));
+        assert!(ScopeEngine::is_private_ip("10.0.0.1"));
+        assert!(ScopeEngine::is_private_ip("172.16.0.1"));
+        assert!(ScopeEngine::is_private_ip("192.168.1.1"));
+        assert!(ScopeEngine::is_private_ip("169.254.1.1"));
+        assert!(ScopeEngine::is_private_ip("0.0.0.0"));
+        assert!(!ScopeEngine::is_private_ip("8.8.8.8"));
+        assert!(!ScopeEngine::is_private_ip("1.1.1.1"));
+    }
+
+    #[test]
+    fn validate_public_ip() {
+        assert!(ScopeEngine::validate_public_ip("8.8.8.8").is_ok());
+        assert!(ScopeEngine::validate_public_ip("1.1.1.1").is_ok());
+        assert!(ScopeEngine::validate_public_ip("192.168.1.1").is_err());
+        assert!(ScopeEngine::validate_public_ip("127.0.0.1").is_err());
+    }
+
+    #[test]
+    fn validate_with_regex() {
+        let scope = Scope {
+            allowed: vec![ScopeRule {
+                rule_type: ScopeRuleType::Allow,
+                value: "regex:.*\\.example\\.com".to_string(),
+                description: None,
+            }],
+            excluded: vec![],
+            rate_limits: Default::default(),
+            execution_limits: Default::default(),
+        };
+
+        assert!(ScopeEngine::validate_with_regex(&scope, "test.example.com").is_ok());
+        assert!(ScopeEngine::validate_with_regex(&scope, "sub.test.example.com").is_ok());
+        assert!(ScopeEngine::validate_with_regex(&scope, "other.com").is_err());
     }
 }

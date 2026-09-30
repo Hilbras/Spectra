@@ -280,7 +280,7 @@ mod tests {
             DetectionSource::XssScanner,
         );
         let id1 = f1.finding.id.to_string();
-        let id2 = f2.finding.id.to_string();
+        let _id2 = f2.finding.id.to_string();
 
         manager.save_finding(f1).await.unwrap();
         manager.save_finding(f2).await.unwrap();

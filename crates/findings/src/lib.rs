@@ -69,6 +69,12 @@ pub enum DetectionSource {
     SqlInjectionScanner,
     XssScanner,
     DirSearchScanner,
+    SsrfScanner,
+    OpenRedirectScanner,
+    PathTraversalScanner,
+    CsrfScanner,
+    XxeScanner,
+    CorsScanner,
     Fingerprinter,
     Crawler,
     Manual,
@@ -81,6 +87,12 @@ impl std::fmt::Display for DetectionSource {
             Self::SqlInjectionScanner => write!(f, "SQL Injection Scanner"),
             Self::XssScanner => write!(f, "XSS Scanner"),
             Self::DirSearchScanner => write!(f, "Directory Search Scanner"),
+            Self::SsrfScanner => write!(f, "SSRF Scanner"),
+            Self::OpenRedirectScanner => write!(f, "Open Redirect Scanner"),
+            Self::PathTraversalScanner => write!(f, "Path Traversal Scanner"),
+            Self::CsrfScanner => write!(f, "CSRF Scanner"),
+            Self::XxeScanner => write!(f, "XXE Scanner"),
+            Self::CorsScanner => write!(f, "CORS Scanner"),
             Self::Fingerprinter => write!(f, "Fingerprinter"),
             Self::Crawler => write!(f, "Crawler"),
             Self::Manual => write!(f, "Manual"),
@@ -277,6 +289,40 @@ pub trait FindingsManager: Send + Sync {
     async fn list_findings(&self, target_id: &Id<TargetId>) -> FindingsResult<Vec<ManagedFinding>>;
     async fn update_status(&self, id: &str, status: FindingStatus) -> FindingsResult<()>;
     async fn generate_report(&self, target_id: &Id<TargetId>) -> FindingsResult<FindingsReport>;
+}
+
+/// A shared handle to a findings manager is itself a findings manager.
+///
+/// This exists so one store can be handed to several owners. Without it, a
+/// component that both writes findings and serves reads has to be duplicated,
+/// and the two copies silently disagree — which is exactly what happened: the
+/// scan engine and the HTTP API each constructed their own manager, so
+/// everything the engine recorded was invisible to the API until it was copied
+/// across by hand.
+#[async_trait::async_trait]
+impl<T> FindingsManager for std::sync::Arc<T>
+where
+    T: FindingsManager + ?Sized,
+{
+    async fn save_finding(&self, finding: ManagedFinding) -> FindingsResult<()> {
+        (**self).save_finding(finding).await
+    }
+
+    async fn get_finding(&self, id: &str) -> FindingsResult<ManagedFinding> {
+        (**self).get_finding(id).await
+    }
+
+    async fn list_findings(&self, target_id: &Id<TargetId>) -> FindingsResult<Vec<ManagedFinding>> {
+        (**self).list_findings(target_id).await
+    }
+
+    async fn update_status(&self, id: &str, status: FindingStatus) -> FindingsResult<()> {
+        (**self).update_status(id, status).await
+    }
+
+    async fn generate_report(&self, target_id: &Id<TargetId>) -> FindingsResult<FindingsReport> {
+        (**self).generate_report(target_id).await
+    }
 }
 
 #[cfg(test)]

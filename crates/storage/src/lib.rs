@@ -1,4 +1,6 @@
+pub mod in_memory;
 pub mod pg;
+pub mod repositories;
 pub mod search;
 
 use async_trait::async_trait;
