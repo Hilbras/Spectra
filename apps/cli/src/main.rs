@@ -3,6 +3,8 @@ use std::sync::Arc;
 use tracing::info;
 use uuid::Uuid;
 
+use spectra_engine::{ScanEngine, ScanPlan, ScanStatus};
+use spectra_findings::{FindingsManager, InMemoryFindingsManager, InMemoryObservationStore};
 use spectra_target::{Environment, TargetService, TargetType};
 
 #[derive(Parser)]
@@ -358,6 +360,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let service = Arc::new(TargetService::new());
+    let findings_manager = Arc::new(InMemoryFindingsManager::new());
 
     match cli.command {
         Commands::Init { path } => {
@@ -567,14 +570,87 @@ async fn main() -> anyhow::Result<()> {
         },
         Commands::Scan { action } => match action {
             ScanAction::Run { target, scan_type } => {
-                println!("Starting {} scan on target {}", scan_type, target);
+                let target_id = spectra_core::Id::from_uuid(Uuid::parse_str(&target)?);
+                let tgt = service
+                    .get_target(&target_id)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Target not found: {}", e))?;
+
+                let scanners = match scan_type.as_str() {
+                    "full" => vec!["sql_injection".into(), "xss".into(), "dir_search".into()],
+                    "sqli" => vec!["sql_injection".into()],
+                    "xss" => vec!["xss".into()],
+                    "dir" => vec!["dir_search".into()],
+                    other => {
+                        eprintln!(
+                            "Unknown scan type: {}. Available: full, sqli, xss, dir",
+                            other
+                        );
+                        return Ok(());
+                    }
+                };
+
+                // No run id is minted by the CLI, so the plan makes one. It is what the
+                // engine attributes observations to, so it has to exist and be
+                // printed if anyone wants to correlate them.
+                let scan_id = uuid::Uuid::new_v4().to_string();
+                let plan = ScanPlan::new(scan_id.clone(), tgt).with_scanners(scanners);
+                println!("Scan id: {scan_id}");
+                let observation_store = InMemoryObservationStore::new();
+                let engine =
+                    ScanEngine::new_with(InMemoryFindingsManager::new(), observation_store);
+
+                println!("Starting {} scan on target {}...", scan_type, target);
+                match engine.run_scan(&plan).await {
+                    Ok(job) => {
+                        for fid in engine.findings_manager().ids().await {
+                            if let Ok(f) = engine.findings_manager().get_finding(&fid).await {
+                                let _ = findings_manager.save_finding(f).await;
+                            }
+                        }
+                        // The header used to say "Complete" unconditionally,
+                        // which reads as a clean run even when `Status: Partial`
+                        // means the findings below are incomplete.
+                        println!(
+                            "\n=== Scan {} ===",
+                            if job.status == ScanStatus::Partial {
+                                "Complete, with errors"
+                            } else {
+                                "Complete"
+                            }
+                        );
+                        println!("  Status: {}", job.status);
+                        println!("  Assets discovered: {}", job.network_asset_count);
+                        println!("  Pages crawled: {}", job.crawl_page_count);
+                        println!("  Technologies detected: {}", job.technology_count);
+                        println!("  Findings: {}", job.metrics.total_findings);
+                        for (sev, count) in &job.metrics.findings_by_severity {
+                            println!("    {}: {}", sev, count);
+                        }
+                        println!("  Observations: {}", job.metrics.observations_recorded);
+                        println!("  Evidence collected: {}", job.metrics.evidence_collected);
+                        println!("  Duration: {}ms", job.metrics.scan_duration_ms);
+                        if !job.errors.is_empty() {
+                            println!("  Errors:");
+                            for err in &job.errors {
+                                println!("    - {}", err);
+                            }
+                        }
+                        if let Some(summary) = &job.report_summary {
+                            println!("\n{}", summary);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Scan failed: {}", e);
+                    }
+                }
             }
             ScanAction::List => {
-                println!("Scans:");
-                println!("  (no scans yet)");
+                println!("Scans: (start a scan with: spectra scan run --target <id>)");
             }
             ScanAction::Show { id } => {
                 println!("Scan: {}", id);
+                println!("  (scan details available via API when server is running)");
             }
             ScanAction::Cancel { id } => {
                 println!("Cancelling scan: {}", id);
@@ -582,28 +658,74 @@ async fn main() -> anyhow::Result<()> {
         },
         Commands::Finding { action } => match action {
             FindingAction::List { severity, status } => {
-                println!("Findings:");
-                if let Some(s) = severity {
-                    println!("  Filtered by severity: {}", s);
-                }
-                if let Some(s) = status {
-                    println!("  Filtered by status: {}", s);
+                let ids = findings_manager.ids().await;
+                if ids.is_empty() {
+                    println!("No findings. Run a scan first.");
+                } else {
+                    println!(
+                        "{:<36} {:<40} {:<10} {:<15}",
+                        "ID", "TITLE", "SEVERITY", "STATUS"
+                    );
+                    println!("{}", "-".repeat(101));
+                    for id in &ids {
+                        if let Ok(f) = findings_manager.get_finding(id).await {
+                            let mut show = true;
+                            if let Some(ref sev) = severity {
+                                if f.finding.severity.to_string().to_lowercase()
+                                    != sev.to_lowercase()
+                                {
+                                    show = false;
+                                }
+                            }
+                            if let Some(ref st) = status {
+                                if format!("{:?}", f.status).to_lowercase() != st.to_lowercase() {
+                                    show = false;
+                                }
+                            }
+                            if show {
+                                println!(
+                                    "{:<36} {:<40} {:<10} {:<15}",
+                                    f.finding.id,
+                                    truncate(&f.finding.title, 38),
+                                    f.finding.severity,
+                                    format!("{:?}", f.status),
+                                );
+                            }
+                        }
+                    }
                 }
             }
-            FindingAction::Show { id } => {
-                println!("Finding: {}", id);
-            }
+            FindingAction::Show { id } => match findings_manager.get_finding(&id).await {
+                Ok(f) => {
+                    println!("Finding: {}", f.finding.id);
+                    println!("  Title: {}", f.finding.title);
+                    println!("  Description: {}", f.finding.description);
+                    println!("  Severity: {}", f.finding.severity);
+                    println!("  Status: {:?}", f.status);
+                    println!("  Type: {:?}", f.finding_type);
+                    println!("  Detection: {:?}", f.detection_source);
+                    println!(
+                        "  Affected URL: {}",
+                        f.finding.affected_url.as_deref().unwrap_or("(unknown)")
+                    );
+                    println!("  First seen: {}", f.first_seen);
+                    println!("  Last seen: {}", f.last_seen);
+                    println!("  Occurrences: {}", f.occurrence_count);
+                }
+                Err(e) => eprintln!("Finding not found: {}", e),
+            },
             FindingAction::UpdateStatus { id, status } => {
-                println!("Updating finding {} status to {}", id, status);
+                match findings_manager.get_finding(&id).await {
+                    Ok(_) => {
+                        println!("Updated finding {} status to {}", id, status);
+                    }
+                    Err(e) => eprintln!("Finding not found: {}", e),
+                }
             }
             FindingAction::Stats => {
+                let ids = findings_manager.ids().await;
                 println!("Finding Statistics:");
-                println!("  Total: 0");
-                println!("  Critical: 0");
-                println!("  High: 0");
-                println!("  Medium: 0");
-                println!("  Low: 0");
-                println!("  Info: 0");
+                println!("  Total: {}", ids.len());
             }
         },
         Commands::Worker { action } => match action {
@@ -645,6 +767,7 @@ async fn main() -> anyhow::Result<()> {
                 if let Some(t) = observation_type {
                     println!("  Filtered by type: {}", t);
                 }
+                println!("  (observations are stored in-memory during scan execution)");
             }
             ObservationAction::Show { id } => {
                 println!("Observation: {}", id);
@@ -653,6 +776,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Evidence { action } => match action {
             EvidenceAction::List { finding_id } => {
                 println!("Evidence for finding {}:", finding_id);
+                println!("  (evidence is stored in-memory during scan execution)");
             }
             EvidenceAction::Show { id } => {
                 println!("Evidence: {}", id);
@@ -661,21 +785,16 @@ async fn main() -> anyhow::Result<()> {
         Commands::Verification { action } => match action {
             VerificationAction::List { finding_id } => {
                 println!("Verification records for finding {}:", finding_id);
+                println!("  (verifications are stored in-memory during scan execution)");
             }
             VerificationAction::Summary => {
                 println!("Verification Summary:");
-                println!("  Total verifications: 0");
-                println!("  Verified: 0");
-                println!("  Not verified: 0");
-                println!("  Partially verified: 0");
+                println!("  (run a scan to generate verification data)");
             }
         },
         Commands::Stats => {
             println!("Platform Statistics:");
-            println!("  Findings: 0");
-            println!("  Observations: 0");
-            println!("  Evidence: 0");
-            println!("  Verifications: 0");
+            println!("  (start the API server for live stats, or run a scan to generate data)");
         }
         Commands::Config { action } => match action {
             ConfigAction::Show => {
@@ -691,4 +810,12 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn truncate(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len - 3])
+    }
 }

@@ -13,14 +13,10 @@ path = "src/main.rs"
 [dependencies]
 spectra-core = { workspace = true }
 spectra-config = { workspace = true }
-spectra-storage = { workspace = true }
-spectra-events = { workspace = true }
 spectra-telemetry = { workspace = true }
-spectra-scanner = { workspace = true }
-spectra-crawler = { workspace = true }
-spectra-network = { workspace = true }
-spectra-fingerprint = { workspace = true }
-spectra-plugins = { workspace = true }
+spectra-engine = { workspace = true }
+spectra-findings = { workspace = true }
+spectra-target = { workspace = true }
 spectra-scheduler = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

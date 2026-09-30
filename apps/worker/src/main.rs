@@ -1,7 +1,12 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::{debug, info};
+use tracing::{debug, error, info, warn};
+
+use spectra_core::Id;
+use spectra_engine::{ScanEngine, ScanPlan};
+use spectra_scheduler::{InMemoryJobQueue, Job, JobQueue};
+use spectra_target::{TargetId, TargetService};
 
 #[derive(Debug, Clone)]
 struct WorkerInfo {
@@ -36,17 +41,14 @@ impl WorkerMetrics {
         Self::default()
     }
 
-    #[allow(dead_code)]
     fn record_processed(&self) {
         self.jobs_processed.fetch_add(1, Ordering::Relaxed);
     }
 
-    #[allow(dead_code)]
     fn record_success(&self) {
         self.jobs_succeeded.fetch_add(1, Ordering::Relaxed);
     }
 
-    #[allow(dead_code)]
     fn record_failure(&self) {
         self.jobs_failed.fetch_add(1, Ordering::Relaxed);
     }
@@ -85,16 +87,24 @@ struct Worker {
     running: Arc<AtomicBool>,
     heartbeat_interval: Duration,
     metrics_interval: Duration,
+    job_queue: Arc<InMemoryJobQueue>,
+    target_service: Arc<TargetService>,
 }
 
 impl Worker {
-    fn new(running: Arc<AtomicBool>) -> Self {
+    fn new(
+        running: Arc<AtomicBool>,
+        job_queue: Arc<InMemoryJobQueue>,
+        target_service: Arc<TargetService>,
+    ) -> Self {
         Self {
             info: WorkerInfo::new(),
             metrics: WorkerMetrics::new(),
             running,
             heartbeat_interval: Duration::from_secs(30),
             metrics_interval: Duration::from_secs(60),
+            job_queue,
+            target_service,
         }
     }
 
@@ -146,8 +156,32 @@ impl Worker {
                     if !self.running.load(Ordering::SeqCst) {
                         break;
                     }
-                    // In a real implementation, this would dequeue from the scheduler
-                    // and process jobs. For now we just poll.
+                    match self.job_queue.dequeue().await {
+                        Ok(Some(job)) => {
+                            info!(job_id = %job.id, job_type = %job.job_type, "Processing job");
+                            self.metrics.record_processed();
+                            match self.process_job(&job).await {
+                                Ok(()) => {
+                                    if let Err(e) = self.job_queue.complete(&job.id).await {
+                                        warn!(job_id = %job.id, error = %e, "Failed to mark job complete");
+                                    }
+                                    self.metrics.record_success();
+                                    info!(job_id = %job.id, "Job completed successfully");
+                                }
+                                Err(e) => {
+                                    error!(job_id = %job.id, error = %e, "Job failed");
+                                    if let Err(re) = self.job_queue.fail(&job.id, &e.to_string()).await {
+                                        warn!(job_id = %job.id, error = %re, "Failed to mark job as failed");
+                                    }
+                                    self.metrics.record_failure();
+                                }
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            warn!(error = %e, "Failed to dequeue job");
+                        }
+                    }
                 }
             }
         }
@@ -173,6 +207,60 @@ impl Worker {
     fn hostname(&self) -> &str {
         &self.info.hostname
     }
+
+    async fn process_job(&self, job: &Job) -> anyhow::Result<()> {
+        match job.job_type.as_str() {
+            "scan" => {
+                let target_id_str = job
+                    .payload
+                    .get("target_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("Missing target_id in job payload"))?;
+
+                let target_id: Id<TargetId> = target_id_str
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("Invalid target_id: {}", target_id_str))?;
+
+                let target = self
+                    .target_service
+                    .get_target(&target_id)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Target not found: {}", e))?;
+
+                let scanners: Vec<String> = job
+                    .payload
+                    .get("scanners")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_else(|| {
+                        vec!["sql_injection".into(), "xss".into(), "dir_search".into()]
+                    });
+
+                // A job id is minted per task further down; mint the plan's scan id here so
+                // the engine has something to attribute observations to.
+                let scan_id = uuid::Uuid::new_v4().to_string();
+                let plan = ScanPlan::new(scan_id.clone(), target).with_scanners(scanners);
+
+                let engine = ScanEngine::new();
+                let result = engine.run_scan(&plan).await;
+                match result {
+                    Ok(_job) => {
+                        info!(job_id = %job.id, "Scan completed");
+                        Ok(())
+                    }
+                    Err(e) => Err(anyhow::anyhow!("Scan failed: {}", e)),
+                }
+            }
+            other => {
+                warn!(job_type = %other, "Unknown job type");
+                Ok(())
+            }
+        }
+    }
 }
 
 #[tokio::main]
@@ -189,7 +277,10 @@ async fn main() -> anyhow::Result<()> {
         r.store(false, Ordering::SeqCst);
     })?;
 
-    let worker = Worker::new(running.clone())
+    let job_queue = Arc::new(InMemoryJobQueue::with_defaults());
+    let target_service = Arc::new(TargetService::new());
+
+    let worker = Worker::new(running.clone(), job_queue, target_service)
         .with_heartbeat_interval(Duration::from_secs(30))
         .with_metrics_interval(Duration::from_secs(60));
 
@@ -257,7 +348,9 @@ mod tests {
     #[test]
     fn worker_creation() {
         let running = Arc::new(AtomicBool::new(true));
-        let worker = Worker::new(running);
+        let queue = Arc::new(InMemoryJobQueue::with_defaults());
+        let ts = Arc::new(TargetService::new());
+        let worker = Worker::new(running, queue, ts);
         assert!(!worker.id().is_empty());
         assert!(!worker.hostname().is_empty());
     }
@@ -265,7 +358,9 @@ mod tests {
     #[test]
     fn worker_builder() {
         let running = Arc::new(AtomicBool::new(true));
-        let worker = Worker::new(running)
+        let queue = Arc::new(InMemoryJobQueue::with_defaults());
+        let ts = Arc::new(TargetService::new());
+        let worker = Worker::new(running, queue, ts)
             .with_heartbeat_interval(Duration::from_secs(10))
             .with_metrics_interval(Duration::from_secs(30));
 
@@ -288,7 +383,9 @@ mod tests {
     #[test]
     fn worker_shutdown() {
         let running = Arc::new(AtomicBool::new(true));
-        let _worker = Worker::new(running.clone());
+        let queue = Arc::new(InMemoryJobQueue::with_defaults());
+        let ts = Arc::new(TargetService::new());
+        let _worker = Worker::new(running.clone(), queue, ts);
 
         assert!(running.load(Ordering::SeqCst));
         running.store(false, Ordering::SeqCst);
@@ -339,7 +436,9 @@ mod tests {
     #[tokio::test]
     async fn worker_run_shutdown() {
         let running = Arc::new(AtomicBool::new(true));
-        let worker = Worker::new(running.clone())
+        let queue = Arc::new(InMemoryJobQueue::with_defaults());
+        let ts = Arc::new(TargetService::new());
+        let worker = Worker::new(running.clone(), queue, ts)
             .with_heartbeat_interval(Duration::from_millis(10))
             .with_metrics_interval(Duration::from_millis(10));
 
