@@ -14,7 +14,6 @@ path = "src/main.rs"
 async-trait = { workspace = true }
 spectra-core = { workspace = true }
 spectra-config = { workspace = true }
-spectra-storage = { workspace = true }
 spectra-events = { workspace = true }
 spectra-telemetry = { workspace = true }
 spectra-target = { workspace = true }

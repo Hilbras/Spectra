@@ -9,11 +9,6 @@ license.workspace = true
 [dependencies]
 spectra-core = { workspace = true }
 spectra-target = { workspace = true }
-spectra-network = { workspace = true }
-spectra-crawler = { workspace = true }
-spectra-storage = { workspace = true }
-spectra-events = { workspace = true }
-spectra-config = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 reqwest = { workspace = true }

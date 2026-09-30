@@ -7,7 +7,6 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-spectra-core = { workspace = true }
 spectra-findings = { workspace = true }
 spectra-scanner = { workspace = true }
 spectra-network = { workspace = true }

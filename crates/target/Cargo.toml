@@ -8,8 +8,6 @@ license.workspace = true
 
 [dependencies]
 spectra-core = { workspace = true }
-spectra-storage = { workspace = true }
-spectra-events = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

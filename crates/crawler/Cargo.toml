@@ -9,10 +9,7 @@ license.workspace = true
 [dependencies]
 spectra-core = { workspace = true }
 spectra-target = { workspace = true }
-spectra-network = { workspace = true }
 spectra-http = { workspace = true }
-spectra-storage = { workspace = true }
-spectra-events = { workspace = true }
 spectra-config = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }

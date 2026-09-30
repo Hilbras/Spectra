@@ -10,7 +10,6 @@ license.workspace = true
 spectra-core = { workspace = true }
 spectra-network = { workspace = true }
 spectra-target = { workspace = true }
-spectra-storage = { workspace = true }
 async-trait = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }

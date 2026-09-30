@@ -15,7 +15,6 @@ spectra-core = { workspace = true }
 spectra-config = { workspace = true }
 spectra-telemetry = { workspace = true }
 spectra-engine = { workspace = true }
-spectra-findings = { workspace = true }
 spectra-target = { workspace = true }
 spectra-scheduler = { workspace = true }
 tokio = { workspace = true }
