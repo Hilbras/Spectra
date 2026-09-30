@@ -31,12 +31,15 @@ code does not implement.
 ```
 POST /api/v1/scans
         │
-        ├─ ResourceGovernor.try_acquire()          429 if at the ceiling
+        ├─ validate scanner names             400 UNKNOWN_SCANNER
+        │   (a name with no implementation is
+        │    refused here, not dropped later)
+        ├─ ResourceGovernor.try_acquire()     429 if at the ceiling
         │   (rejected here creates no job)
         ▼
   ScanEngine::run_scan
         │
-        ├─ ScanLimits::clamp(plan)                 caller ≤ operator ceiling
+        ├─ ScanLimits::clamp(plan)            caller ≤ operator ceiling
         ├─ record_error for each reduced limit
         ├─ emit ScanStarted
         │
@@ -45,7 +48,9 @@ POST /api/v1/scans
                 ├─ 1 Discovering   network_engine.discover()
                 ├─ 2 Crawling      crawler.crawl(CrawlerConfig from plan)
                 ├─ 3 Fingerprinting
-                ├─ 4 Scanning      9 scanners
+                ├─ 4 Scanning      resolve requested names →
+                │                   record_scanner_selection_coverage()
+                │                   then run the resolved scanners
                 ├─ 5 save          findings_manager.save_finding()
                 │                   evidence_engine.capture()
                 │                   observation_engine.record_with()  → plan.scan_id
@@ -62,6 +67,51 @@ POST /api/v1/scans
 
 The released slot is why a scan that finishes — including one that fails inside the
 engine — does not permanently consume capacity.
+
+## Scanner selection is a coverage decision
+
+The set of scanners a scan runs is chosen by name, and **a name with no
+implementation used to vanish silently.** `create_scanners` matched a hardcoded list
+of nine names and its fallback arm was `{}`, so `POST /scans {"scanners": ["sqli"]}`
+produced a scan that ran zero scanners, reported `Completed`, and rendered
+`text_summary` as "Total: 0". For a security tool that is the worst possible output:
+a clean result for a target nothing had examined, indistinguishable from a genuine
+one.
+
+Three things now prevent it, and each was verified by mutating it:
+
+1. **The API refuses an unrecognised name** with `400` and `code: "UNKNOWN_SCANNER"`,
+   listing the valid names. The names come from `available_scanners()`, which is the
+   same function `ScanPlan::new` derives its default list from, so the two cannot
+   drift. A test asserts every advertised name survives validation, which is what
+   stops the validation itself from rejecting real scanners.
+2. **The engine reports what it could not build.** `create_scanners` returns
+   `(scanners, unresolved)` rather than dropping the tail of the match.
+3. **The run records the consequence** via `record_scanner_selection_coverage`.
+
+The levels follow ADR-009's grammar:
+
+| Situation | Status | Why |
+|---|---|---|
+| Every requested name resolved | `Completed` | Every requested check ran |
+| Some resolved, some did not | `Partial` | Those classes are named as unchecked |
+| **None resolved**, or **none requested** | `Failed` | No vulnerability class was tested at all |
+
+Requesting `[]` is a legitimate caller choice — the crawl and fingerprint stages
+still produce real results — but it is not a vulnerability assessment, and the report
+must not read as one.
+
+A unit test from before the fix, `create_scanners_filters`, asserted only
+`scanners.len() == 2`. That **enshrined the silent drop as intended behaviour**, which
+is why it had to be rewritten rather than merely supplemented.
+
+## Registration is still not extensible
+
+The nine names are a `match` over string literals in `create_scanners`, inside the
+*engine*. Adding a scanner therefore requires editing `crates/engine/src/lib.rs`, and
+a scanner cannot be discovered at runtime. The scanner crate is replaceable — the
+engine holds `Vec<Box<dyn Scanner>>` — but the set of scanners is fixed at compile
+time by a different crate. Worth knowing before Phase 7 adds stages.
 
 ## Arrows that do not exist
 
@@ -101,6 +151,10 @@ hundred pages should not be reported as partial, or every real site would be. A 
 that retrieves nothing at all is a *coverage gap*, because "0 findings" over an
 unreached target is a claim the scan cannot support. A scanner that fails outright is
 *lost coverage*, because the target was reachable and a stage gave up.
+
+A scan where **no vulnerability class was tested at all** — every requested scanner
+name was unrecognised, or none was requested — is also a coverage gap, for the same
+reason. See "Scanner selection is a coverage decision" above.
 
 `resolve_status()` reads `coverage_gaps` first, then `lost_coverage`, so `Failed`
 wins over `Partial`. The report summary is rendered **after** the status is resolved,

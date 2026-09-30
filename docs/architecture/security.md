@@ -139,6 +139,11 @@ Named so they are not mistaken for controls:
   scanning.
 - **No encryption at rest.** Findings, observations and evidence are in memory. A
   previous revision of `SECURITY.md` claimed otherwise; that claim has been removed.
+- **No AI features, but the configuration implies there are.**
+  `Config.ai` defaults to `provider: "openai"`, `model: "gpt-4"` and
+  `api_key_env: "SPECTRA_AI_API_KEY"`, and **nothing reads it**. Setting that variable
+  produces silence, not an error and not AI-assisted triage. See
+  [`boundaries.md`](boundaries.md).
 - **No plugin sandbox.** There is no plugin host. See [`plugins.md`](plugins.md).
 - **No per-caller scan quota.** Only concurrency.
 - **No per-account login throttle.** Throttling is per client address, which is

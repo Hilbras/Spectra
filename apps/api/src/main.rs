@@ -1044,6 +1044,40 @@ async fn create_scan(
     // queries by.
     let mut plan = ScanPlan::new(scan_id.clone(), target);
     if let Some(scanners) = req.scanners {
+        // Rejected here rather than left to the engine. An unrecognised name used to
+        // be dropped in silence, so `{"scanners": ["sqli"]}` produced a scan that
+        // tested nothing, reported `Completed`, and rendered "Total: 0" -- a clean
+        // result for a target nothing had examined. The engine records the coverage
+        // loss as well, but a caller is better served by being told the valid names
+        // than by discovering the problem in a report afterwards.
+        let unknown: Vec<&String> = scanners
+            .iter()
+            .filter(|name| !spectra_engine::available_scanners().contains(&name.as_str()))
+            .collect();
+
+        if !unknown.is_empty() {
+            let listed = unknown
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            warn!(
+                scanners = %listed,
+                "scan request named scanners that do not exist"
+            );
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!(
+                        "Unknown scanner{}: {listed}. Available: {}.",
+                        if unknown.len() == 1 { "" } else { "s" },
+                        spectra_engine::available_scanners().join(", ")
+                    ),
+                    code: "UNKNOWN_SCANNER".to_string(),
+                }),
+            ));
+        }
+
         plan = plan.with_scanners(scanners);
     }
     if let Some(depth) = req.max_depth {
@@ -3515,6 +3549,99 @@ mod tests {
             "a second concurrent scan must be refused, not silently queued or run \
              anyway"
         );
+    }
+
+    /// An unrecognised scanner name must be refused at the request boundary.
+    ///
+    /// Previously the name reached the engine, matched no arm of a `match` whose
+    /// fallback was `{}`, and vanished. The scan then ran zero scanners, reported
+    /// `Completed`, and rendered "Total: 0" — indistinguishable from a clean
+    /// target. A `400` naming the valid scanners is the only response that stops
+    /// the caller believing a false negative.
+    #[tokio::test]
+    async fn an_unknown_scanner_name_is_rejected_rather_than_silently_dropped() {
+        let port = blackhole();
+        let config = governed_config();
+        let (app, jwt) = governed_router(&config);
+        let admin = token_for(&jwt, "admin");
+
+        let target = format!("http://127.0.0.1:{port}/");
+
+        for bad in ["typo", "sqli", "SQL_INJECTION", ""] {
+            let status = post_json(
+                &app,
+                "/api/v1/scans",
+                &admin,
+                serde_json::json!({ "target": target, "scanners": [bad] }),
+            )
+            .await;
+            assert_eq!(
+                status,
+                axum::http::StatusCode::BAD_REQUEST,
+                "`{bad}` is not a scanner and must not start a scan"
+            );
+        }
+
+        // And no job may exist for any of those refusals.
+        assert_eq!(
+            scan_count(&app, &admin).await,
+            0,
+            "a refused scanner name must not leave a scan behind"
+        );
+    }
+
+    /// A valid name must still be accepted, or the validation above would be
+    /// refusing everything.
+    #[tokio::test]
+    async fn a_known_scanner_name_is_accepted() {
+        let port = blackhole();
+        let config = governed_config();
+        let (app, jwt) = governed_router(&config);
+        let admin = token_for(&jwt, "admin");
+
+        assert_eq!(
+            post_json(
+                &app,
+                "/api/v1/scans",
+                &admin,
+                serde_json::json!({
+                    "target": format!("http://127.0.0.1:{port}/"),
+                    "scanners": ["xss", "sql_injection"],
+                }),
+            )
+            .await,
+            axum::http::StatusCode::OK
+        );
+    }
+
+    /// Every name the engine advertises must survive the API's validation. If the
+    /// API rejected a name the engine implements, the validation would be lying.
+    #[tokio::test]
+    async fn every_advertised_scanner_name_passes_validation() {
+        let port = blackhole();
+        let mut config = governed_config();
+        // One per name would exceed the concurrency ceiling of 1, and this test is
+        // about validation rather than about the governor.
+        config.scanner.max_concurrent = 64;
+        let (app, jwt) = governed_router(&config);
+        let admin = token_for(&jwt, "admin");
+
+        for name in spectra_engine::available_scanners() {
+            assert_eq!(
+                post_json(
+                    &app,
+                    "/api/v1/scans",
+                    &admin,
+                    serde_json::json!({
+                        "target": format!("http://127.0.0.1:{port}/"),
+                        "scanners": [*name],
+                    }),
+                )
+                .await,
+                axum::http::StatusCode::OK,
+                "`{name}` is advertised by the engine, so the API must accept it"
+            );
+        }
     }
 
     /// A rejected submission must leave no trace. It never acquired a slot, so it

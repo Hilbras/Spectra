@@ -528,6 +528,39 @@ whether they intend to ship a scanner that is usable without a signed authorisat
 agrees with it, and controls nothing. The scan limits were the same defect at larger
 scale.
 
+### A21 — An unrecognised scanner name was dropped silently, producing a false negative
+
+Found during the Phase 1 boundary verification. **Remediated — ADR-014.**
+
+**Evidence.**
+
+- `POST /api/v1/scans` takes `scanners: Option<Vec<String>>` and passed it straight
+  into `ScanPlan::with_scanners` with no validation (`apps/api/src/main.rs`).
+- `create_scanners` resolved names with a `match` whose fallback arm was `_ => {}`,
+  so a name that matched nothing disappeared.
+- The Scanning stage then iterated an empty `Vec<Box<dyn Scanner>>`. No error, no
+  coverage record.
+- `resolve_status()` found no gaps and no lost coverage, and returned `Completed`.
+  The report rendered `Total: 0`.
+
+**So a scan could report `Completed` with zero findings having tested no
+vulnerability class at all** — indistinguishable from a clean target. `"sqli"` is
+not a contrived input: it is one of the CLI's own aliases, which the CLI translates
+before the engine sees it. The API has no such translation.
+
+**A test enshrined it.** `create_scanners_filters` asserted `scanners.len() == 2` for
+three requested names including `"unknown_scanner"`. It read as a filter test, but it
+asserted that the unknown name was dropped — so it would have failed on the fix. A
+test written from the same reading of the code as the bug resists being corrected.
+
+**Fixed three ways:** the API returns `400 UNKNOWN_SCANNER` listing the valid names;
+`create_scanners` returns the unresolved names instead of discarding them; and
+`record_scanner_selection_coverage` applies the ADR-009 grammar — some unresolved is
+`Partial`, none resolved or none requested is `Failed`.
+
+**Same class as A20 and ADR-008.** An input that looks like it controls something,
+and does not.
+
 ### Remediation 9 — Authorisation (RBAC)
 
 `Permission`, `Role`, `Role::has_permission` and `require_permission_fn` existed

@@ -275,7 +275,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full development guide.
 
 ## Testing
 
-662 tests across 21 crates, all passing. Run the full suite:
+671 tests across 21 crates, all passing. Run the full suite:
 
 ```bash
 cargo test --workspace

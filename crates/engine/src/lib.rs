@@ -169,6 +169,84 @@ fn emit(bus: &Option<EventBus>, event_type: EventType, payload: EventPayload) {
     }
 }
 
+/// Every scanner name this engine can run.
+///
+/// The single source of truth. The API validates against it so a caller is told
+/// which names are valid instead of receiving a scan that silently ran fewer checks
+/// than they asked for.
+pub fn available_scanners() -> &'static [&'static str] {
+    &[
+        "sql_injection",
+        "xss",
+        "dir_search",
+        "ssrf",
+        "open_redirect",
+        "path_traversal",
+        "csrf",
+        "xxe",
+        "cors",
+    ]
+}
+
+/// Log a requested scanner name that has no implementation.
+///
+/// The warning is not the fix. It exists so that an unresolved name is visible in
+/// the logs even when the caller is not reading the scan's error list; the coverage
+/// record in `run_scan_inner` is what makes it visible in the result.
+fn job_warn_unresolved(name: &str) {
+    warn!(
+        scanner = name,
+        available = ?available_scanners(),
+        "requested scanner has no implementation; its vulnerability class will go unchecked"
+    );
+}
+
+/// Record what the scanner selection did and did not cover.
+///
+/// A name with no implementation means a vulnerability class went unchecked. When
+/// some scanners did run, that is *lost coverage* and the scan is `Partial`: the
+/// classes that ran are honestly reported, and the ones that did not are named.
+///
+/// When none ran, nothing examined the target for vulnerabilities at all. That is a
+/// total *coverage gap*, and the scan must be `Failed`. Reporting `Completed` with
+/// zero findings over an unscanned target is the false negative the whole status
+/// split exists to prevent, and it is indistinguishable from a clean result.
+///
+/// Requesting no scanners at all is a legitimate caller choice — the crawl and
+/// fingerprint stages still produce real results — but it is not a vulnerability
+/// assessment, and the report must not read as one.
+///
+/// A free function over `&mut ScanJob` so the decision is testable without a
+/// network, a target or a running scan. The three inputs are the only facts the
+/// decision depends on.
+fn record_scanner_selection_coverage(job: &mut ScanJob, requested: usize, unresolved: Vec<String>) {
+    let nothing_ran = requested == 0 || unresolved.len() == requested;
+
+    for name in &unresolved {
+        if nothing_ran {
+            job.record_coverage_gap(
+                "scanning",
+                format!(
+                    "no scanner ran: `{name}` has no implementation, and no other \
+                     requested scanner did either"
+                ),
+            );
+        } else {
+            job.record_lost_coverage(
+                "scanning",
+                format!("`{name}` has no implementation; that check did not run"),
+            );
+        }
+    }
+
+    if requested == 0 {
+        job.record_coverage_gap(
+            "scanning",
+            "no scanners were requested, so no vulnerability class was tested",
+        );
+    }
+}
+
 /// Operator-set ceilings on what a single scan may consume.
 ///
 /// Deliberately separate from [`ScanPlan`], which is caller-supplied. A caller
@@ -244,17 +322,12 @@ impl ScanPlan {
         Self {
             target,
             scan_id: scan_id.into(),
-            scanners: vec![
-                "sql_injection".into(),
-                "xss".into(),
-                "dir_search".into(),
-                "ssrf".into(),
-                "open_redirect".into(),
-                "path_traversal".into(),
-                "csrf".into(),
-                "xxe".into(),
-                "cors".into(),
-            ],
+            // Derived from `available_scanners` rather than repeated, so the default
+            // and the list the API validates against cannot drift apart.
+            scanners: available_scanners()
+                .iter()
+                .map(|s| (*s).to_string())
+                .collect(),
             max_depth: 3,
             max_pages: 100,
             timeout_secs: 300,
@@ -807,7 +880,8 @@ impl<F: FindingsManager, O: ObservationStore> ScanEngine<F, O> {
         }
 
         job.status = ScanStatus::Scanning;
-        let scanners = self.create_scanners(&plan.scanners);
+        let (scanners, unresolved) = self.create_scanners(&plan.scanners);
+        record_scanner_selection_coverage(job, plan.scanners.len(), unresolved);
 
         for mut scanner in scanners {
             let config = ScannerConfig {
@@ -954,8 +1028,16 @@ impl<F: FindingsManager, O: ObservationStore> ScanEngine<F, O> {
         Ok(())
     }
 
-    fn create_scanners(&self, scanner_names: &[String]) -> Vec<Box<dyn Scanner>> {
+    /// Build the requested scanners, and name the ones that could not be built.
+    ///
+    /// The unresolved names are returned rather than dropped. Dropping them was a
+    /// false negative: `POST /scans {"scanners": ["typo"]}` produced a scan that ran
+    /// zero scanners, reported `Completed`, and rendered "Total: 0" — a clean bill
+    /// of health for a target nothing had examined.
+    fn create_scanners(&self, scanner_names: &[String]) -> (Vec<Box<dyn Scanner>>, Vec<String>) {
         let mut scanners: Vec<Box<dyn Scanner>> = Vec::new();
+        let mut unresolved: Vec<String> = Vec::new();
+
         for name in scanner_names {
             match name.as_str() {
                 "sql_injection" => {
@@ -973,10 +1055,13 @@ impl<F: FindingsManager, O: ObservationStore> ScanEngine<F, O> {
                 "csrf" => scanners.push(Box::new(spectra_scanner::CsrfScanner::new())),
                 "xxe" => scanners.push(Box::new(spectra_scanner::XxeScanner::new())),
                 "cors" => scanners.push(Box::new(spectra_scanner::CorsScanner::new())),
-                _ => {}
+                other => {
+                    unresolved.push(other.to_string());
+                    job_warn_unresolved(other);
+                }
             }
         }
-        scanners
+        (scanners, unresolved)
     }
 
     fn detection_source_for(&self, scanner_name: &str) -> DetectionSource {
@@ -1096,6 +1181,128 @@ mod tests {
     }
 
     #[test]
+    fn an_unknown_scanner_name_is_reported_rather_than_dropped() {
+        let engine = ScanEngine::new();
+
+        // Resolvable names still produce scanners.
+        let (built, unresolved) = engine.create_scanners(&["xss".into()]);
+        assert_eq!(built.len(), 1);
+        assert!(unresolved.is_empty());
+
+        // An unknown name produces nothing, and says so. Before this was recorded,
+        // the caller received a `Completed` scan with no findings and no error,
+        // which is indistinguishable from a clean target.
+        let (built, unresolved) = engine.create_scanners(&["typo".into()]);
+        assert_eq!(built.len(), 0);
+        assert_eq!(unresolved, vec!["typo".to_string()]);
+
+        // `sqli` is a CLI-side alias translated before it reaches the engine; the
+        // API does not translate, so posting it yields nothing.
+        let (built, unresolved) = engine.create_scanners(&["sqli".into()]);
+        assert_eq!(built.len(), 0);
+        assert_eq!(unresolved, vec!["sqli".to_string()]);
+
+        // A mix keeps the resolvable ones and names only what it could not build.
+        let (built, unresolved) =
+            engine.create_scanners(&["xss".into(), "typo".into(), "sql_injection".into()]);
+        assert_eq!(built.len(), 2);
+        assert_eq!(unresolved, vec!["typo".to_string()]);
+
+        // Requesting none at all is not an error, but it is not a scan either.
+        let (built, unresolved) = engine.create_scanners(&[]);
+        assert_eq!(built.len(), 0);
+        assert!(unresolved.is_empty());
+    }
+
+    /// The coverage consequence of an unresolvable scanner selection.
+    ///
+    /// These assert the *status*, not merely that `create_scanners` returns the
+    /// right length. A test that only checked the returned count passed while the
+    /// engine still reported `Completed` over a target it never scanned, which is
+    /// the defect itself.
+    #[test]
+    fn a_scan_where_no_scanner_ran_is_failed_not_completed() {
+        let mut job = ScanJob::new(Id::new());
+
+        // The exact false negative: one unknown name, nothing else requested.
+        record_scanner_selection_coverage(&mut job, 1, vec!["typo".to_string()]);
+
+        assert_eq!(
+            job.resolve_status(),
+            ScanStatus::Failed,
+            "a scan that tested no vulnerability class must not report Completed"
+        );
+        assert!(
+            job.errors.iter().any(|e| e.contains("typo")),
+            "the caller must be told which name failed to resolve: {:?}",
+            job.errors
+        );
+    }
+
+    #[test]
+    fn a_scan_where_some_scanners_ran_is_partial_not_failed() {
+        let mut job = ScanJob::new(Id::new());
+
+        // Three requested, one unresolvable: the other two cover their classes.
+        record_scanner_selection_coverage(&mut job, 3, vec!["typo".to_string()]);
+
+        assert_eq!(
+            job.resolve_status(),
+            ScanStatus::Partial,
+            "partial coverage is Partial, not Failed -- two scanners did run"
+        );
+        assert!(job.coverage_gaps.is_empty());
+        assert_eq!(job.lost_coverage.len(), 1);
+    }
+
+    #[test]
+    fn requesting_no_scanners_is_a_coverage_gap() {
+        let mut job = ScanJob::new(Id::new());
+
+        record_scanner_selection_coverage(&mut job, 0, vec![]);
+
+        assert_eq!(
+            job.resolve_status(),
+            ScanStatus::Failed,
+            "\"0 findings\" over a target no scanner looked at is a false negative"
+        );
+    }
+
+    #[test]
+    fn a_fully_resolved_selection_records_no_coverage_loss() {
+        let mut job = ScanJob::new(Id::new());
+
+        // The normal path: every requested name resolved. Nothing may be recorded,
+        // or every ordinary scan would be reported Partial.
+        record_scanner_selection_coverage(&mut job, 9, vec![]);
+
+        assert_eq!(job.resolve_status(), ScanStatus::Completed);
+        assert!(job.errors.is_empty());
+        assert!(job.lost_coverage.is_empty());
+        assert!(job.coverage_gaps.is_empty());
+    }
+
+    #[test]
+    fn every_advertised_scanner_name_resolves_to_an_implementation() {
+        // `available_scanners` is the list the API validates against, so an entry
+        // that does not resolve would reintroduce the silent-drop defect through
+        // the validation path itself.
+        let engine = ScanEngine::new();
+        let (built, unresolved) = engine.create_scanners(
+            &available_scanners()
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>(),
+        );
+
+        assert!(
+            unresolved.is_empty(),
+            "advertised but unimplemented: {unresolved:?}"
+        );
+        assert_eq!(built.len(), available_scanners().len());
+    }
+
+    #[test]
     fn scan_status_variants() {
         let statuses = [
             ScanStatus::Pending,
@@ -1137,8 +1344,15 @@ mod tests {
             "xss".into(),
             "unknown_scanner".into(),
         ];
-        let scanners = engine.create_scanners(&names);
+
+        // This test used to assert only `scanners.len() == 2`, which *enshrined* the
+        // silent drop as intended behaviour and left the caller unable to tell that
+        // one of the three checks they asked for had not run. It now asserts the
+        // name is reported as well.
+        let (scanners, unresolved) = engine.create_scanners(&names);
+
         assert_eq!(scanners.len(), 2);
+        assert_eq!(unresolved, vec!["unknown_scanner".to_string()]);
     }
 
     #[test]

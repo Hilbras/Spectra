@@ -17,6 +17,7 @@ for the evidence behind that finding.
 | Document | Contents |
 |---|---|
 | [`overview.md`](overview.md) | This file: crate inventory and what actually runs |
+| [`boundaries.md`](boundaries.md) | `s.txt` §4's required boundaries, verified one at a time |
 | [`execution.md`](execution.md) | The scan pipeline, stage by stage, with verified arrows |
 | [`runtime.md`](runtime.md) | Process lifecycle, configuration, resource bounds |
 | [`security.md`](security.md) | Trust boundaries, authentication, SSRF, RBAC |

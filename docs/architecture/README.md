@@ -21,13 +21,16 @@ superseded by a new record rather than edited.
 | [011](ARCHITECTURE_DECISIONS/ADR-011-scan-partial-is-its-own-event.md) | A partial scan is its own event type | Accepted |
 | [012](ARCHITECTURE_DECISIONS/ADR-012-transactional-resource-acquisition.md) | Resource acquisition is transactional | Accepted |
 | [013](ARCHITECTURE_DECISIONS/ADR-013-hold-the-plugin-host-until-isolation-exists.md) | Hold the plugin host until isolation exists | Accepted |
+| [014](ARCHITECTURE_DECISIONS/ADR-014-unresolvable-scanner-is-a-coverage-claim.md) | An unresolvable scanner name is a coverage claim | Accepted |
 
 ADRs 001–006 predate the Phase 0 audit. 005 and 006 carry audit notes, because each
 makes a claim that the source does not support: 005 names two traits that do not
-exist, and 006's "Future Work" has not begun.
+exist, and 006's "Future Work" has not begun, which is the same statement as 0 of 12
+stateful types surviving a restart.
 
 ADRs 007–013 were written during the remediation work and each corresponds to a
-defect found in [`../audit/PHASE_0_AUDIT.md`](../audit/PHASE_0_AUDIT.md).
+defect found in [`../audit/PHASE_0_AUDIT.md`](../audit/PHASE_0_AUDIT.md). ADR-014
+came out of the boundary verification in Phase 1 and is recorded there as well.
 
 ## Reading order
 
