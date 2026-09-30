@@ -465,6 +465,12 @@ though nothing imports it yet.
 | `spectra-plugins` | 667 | 21 | **Hold** — no host until real isolation exists |
 | `spectra-sandbox` | 696 | 26 | **Hold, and contained** — it does not sandbox |
 
+LOC figures for `events`, `plugins` and `sandbox` were taken before the module
+documentation added during Remediation 14. Current figures are 636, 692 and 735
+respectively; the growth is entirely doc comments recording what these crates do *not*
+do. See [`../architecture/overview.md`](../architecture/overview.md) for the full
+inventory at the current commit.
+
 ### Carried-forward blockers
 
 These are recorded here for traceability; each is remediated in its own phase:
@@ -474,6 +480,53 @@ These are recorded here for traceability; each is remediated in its own phase:
 | `PlanTimeout`/`max_depth`/`max_pages` never read by `run_scan` | Phase 7 (Engine) |
 | `network_asset_count` counts the target without verifying reachability | Phase 7 (Engine) |
 | MSRV 1.75 does not compile | Before publication |
+
+### A20 — `respect_robots` is decorative, and the default says otherwise
+
+Found during the Phase 1 architecture freeze, after the Phase 0 gate closed. Recorded
+here rather than in the Phase 1 documents so it sits with the other findings.
+
+**Evidence.**
+
+- `crates/crawler/src/lib.rs:34` declares `respect_robots: bool` on `CrawlerConfig`.
+- `crates/crawler/src/lib.rs:45` defaults it to **`true`**.
+- `crates/crawler/src/lib.rs:73` — `Crawler::crawl` reads `self.config.max_pages` and
+  `self.config.max_depth`. It never reads `self.config.respect_robots`.
+- `crates/crawler/src/crawl.rs` (244 lines) contains **zero** occurrences of
+  `robots`, `Robots`, `CrawlPolicy` or `policy`.
+- `crates/crawler/src/robots.rs` implements a **complete, working** `RobotsTxt` parser:
+  `parse()` reads `User-agent` groups and `Disallow` directives, `is_allowed()` matches
+  path prefixes. 3 tests. Nothing in the workspace calls either method.
+- `CrawlPolicy` carries `respect_robots` from `CrawlerConfig` (`policy.rs:25`) and is
+  re-exported from `lib.rs:14`. Its three tests assert that fields were copied from
+  one struct to another. `crawl()` never reads a `CrawlPolicy`.
+
+**So:** Spectra crawls paths a site's `robots.txt` lists under `Disallow`, while its
+configuration states by default that it respects `robots.txt`.
+
+**Why it is not simply fixed.** Honouring `robots.txt` would *reduce scan coverage*,
+and a vulnerability scanner needs to reach paths in order to test them. This is a
+product decision, not a bug fix with an obvious correct answer:
+
+- If the scanner honours `Disallow` by default, it stops fetching exactly the
+  paths most likely to be interesting — `/admin`, `/api`, `/internal`.
+- If it ignores `robots.txt`, that is the correct behaviour for a security tool, but
+  it must be **stated plainly** rather than implied by a field that says `true`.
+
+The defect is the **mismatch**, not either value. Two acceptable resolutions:
+
+1. `respect_robots` becomes real — fetch and honour it. Coverage drops; document it.
+2. The field is renamed to what it means (it does not) or removed, `robots.rs` is
+   either wired or deleted, and `SECURITY.md` states plainly that Spectra does not
+   honour `robots.txt`.
+
+Resolution 2 is cheaper and does not weaken the product. Which one is correct depends
+on how the maintainers intend the tool to be used against third-party targets, and on
+whether they intend to ship a scanner that is usable without a signed authorisation.
+
+**Same class as ADR-008.** A field that reads as a control, is asserted by a test that
+agrees with it, and controls nothing. The scan limits were the same defect at larger
+scale.
 
 ### Remediation 9 — Authorisation (RBAC)
 
