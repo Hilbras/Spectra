@@ -1,0 +1,81 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: spectra
+      POSTGRES_USER: spectra
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spectra -d spectra"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    # Must match `EXPOSE 8080` and `Config::default().server.port`. It was
+    # previously published as 3000:3000 while the server bound 8080, so the
+    # container was unreachable on its own published port.
+    ports:
+      - "${SPECTRA_PORT:-8080}:8080"
+    environment:
+      # The code reads SPECTRA_-prefixed names. This file previously set
+      # DATABASE_URL/JWT_SECRET/RUST_LOG, none of which the code consulted, so
+      # every setting silently had no effect.
+      SPECTRA_DATABASE_URL: postgres://spectra:${POSTGRES_PASSWORD}@postgres/spectra
+      SPECTRA_REDIS_URL: redis://redis:6379
+      # No usable default: the API refuses to start if this is unset or under 32
+      # bytes, because a shipped signing key lets anyone mint an admin token.
+      SPECTRA_JWT_SECRET: ${SPECTRA_JWT_SECRET:?set SPECTRA_JWT_SECRET in .env}
+      # Ditto for the initial admin account. Leave unset and the API generates a
+      # random password and writes it to SPECTRA_ADMIN_PASSWORD_FILE in the
+      # container; retrieve it with `docker compose exec api cat <path>`.
+      SPECTRA_ADMIN_PASSWORD: ${SPECTRA_ADMIN_PASSWORD:-}
+      SPECTRA_ADMIN_PASSWORD_FILE: /run/spectra/initial-admin-password
+      SPECTRA_SERVER_PORT: "8080"
+      SPECTRA_CORS_ORIGINS: ${SPECTRA_CORS_ORIGINS:-}
+      # Leave false unless you need to scan internal hosts. Setting it true also
+      # re-opens SSRF against the scanner, since a scan target is fetched by this
+      # server.
+      SPECTRA_ALLOW_INTERNAL_TARGETS: ${SPECTRA_ALLOW_INTERNAL_TARGETS:-false}
+      SPECTRA_LOG_LEVEL: ${SPECTRA_LOG_LEVEL:-info}
+    volumes:
+      - admin_password:/run/spectra
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: ["spectra-worker"]
+    environment:
+      SPECTRA_DATABASE_URL: postgres://spectra:${POSTGRES_PASSWORD}@postgres/spectra
+      SPECTRA_REDIS_URL: redis://redis:6379
+      SPECTRA_LOG_LEVEL: ${SPECTRA_LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  admin_password:
