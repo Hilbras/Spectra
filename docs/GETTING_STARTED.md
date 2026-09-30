@@ -187,5 +187,5 @@ See [CONFIGURATION.md](CONFIGURATION.md) for all options.
 - [Configuration Reference](CONFIGURATION.md) — all config options
 - [API Documentation](API.md) — full REST API reference
 - [Plugin Development](PLUGIN_DEVELOPMENT.md) — extend Spectra with plugins
-- [Architecture](architecture/ARCHITECTURE.md) — system design deep dive
+- [Architecture](architecture/README.md) — what actually runs, and what does not
 - [Development Guide](DEVELOPMENT.md) — contributing to Spectra

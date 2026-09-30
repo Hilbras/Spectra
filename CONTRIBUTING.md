@@ -75,7 +75,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 ## Architecture
 
-See `docs/architecture/ARCHITECTURE.md` for the full specification.
+Start at `docs/architecture/README.md`. It links the pipeline that actually runs
+(`execution.md`), the crate inventory with what is live and what is dead
+(`overview.md`), and the ADRs.
+
+`docs/architecture/ARCHITECTURE.md` is the original specification and is **superseded**:
+it describes five stages that do not execute. It is retained for design intent.
 
 ### Key Principles
 

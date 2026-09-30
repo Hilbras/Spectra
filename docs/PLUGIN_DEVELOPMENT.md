@@ -1,5 +1,32 @@
 # Plugin Development
 
+> **There is no plugin host.** Following this guide will produce a plugin that cannot
+> be loaded, because nothing in Spectra constructs a `PluginManager`, discovers a
+> manifest, or loads code from outside the binary. `spectra-plugins` has zero
+> importers.
+>
+> The `Plugin` trait shown below does exist and does compile. What does not exist is
+> anything that consumes it.
+>
+> **Do not wire plugins through `spectra-sandbox`.** It is named `Sandbox` and is not
+> one: `LocalSandbox` spawns a real subprocess inside the server process with
+> `tokio::process::Command`, inheriting the server's uid, filesystem, network and
+> environment. None of the six `ResourceLimits` fields is enforced during execution —
+> `max_cpu_time_ms` is measured *after* the child exits, so a subprocess that runs
+> forever is reported as a timeout once it eventually stops, having already consumed
+> whatever it liked. The full table of unenforced limits is in
+> [`crates/sandbox/src/lib.rs`](../crates/sandbox/src/lib.rs).
+>
+> `spectra-plugins` is **held**, not deleted, pending a real sandbox with fuel and
+> memory limits enforced during execution. See
+> [`architecture/plugins.md`](architecture/plugins.md) and
+> [ADR-013](architecture/ARCHITECTURE_DECISIONS/ADR-013-hold-the-plugin-host-until-isolation-exists.md).
+>
+> Recommendation: **drop `s.txt` Phases 24 and 26**, and treat Phase 25 (a WASM sandbox
+> with an explicit capability set) as the entry point if plugins are ever wanted.
+
+---
+
 Spectra supports plugins via the `Plugin` trait. Plugins extend the platform with custom scanners, transformers, enrichers, notifiers, and reporters.
 
 ## Plugin Interface

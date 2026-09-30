@@ -46,7 +46,7 @@ spectra finding stats
 ## Documentation
 
 - [GitHub](https://github.com/Hilbras/Spectra)
-- [Architecture](https://github.com/Hilbras/Spectra/blob/main/docs/architecture/ARCHITECTURE.md)
+- [Architecture](https://github.com/Hilbras/Spectra/blob/main/docs/architecture/README.md)
 - [Configuration](https://github.com/Hilbras/Spectra/blob/main/docs/CONFIGURATION.md)
 - [API Reference](https://github.com/Hilbras/Spectra/blob/main/docs/API.md)
 

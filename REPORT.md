@@ -1,5 +1,31 @@
 # Spectra — Platform Report
 
+> **Dated snapshot, superseded.** Generated 2026-09-18 against v0.1.1. It is retained
+> as a record of that state and should not be used to answer "what does Spectra do".
+>
+> It was accurate when written. Since then the Phase 0 audit
+> ([`docs/audit/PHASE_0_AUDIT.md`](docs/audit/PHASE_0_AUDIT.md)) found that **5 of the
+> 12 stages in the architecture it describes do not execute**, and that four of the
+> security features it lists as present were not. Specifically:
+>
+> - **Test count is 662, not 387** (the per-crate table below is likewise stale).
+> - **Finding verification is not driven by any scan.** The crate is real and is
+>   imported by the API, but no pipeline stage calls it, so the verification endpoints
+>   return empty for every finding.
+> - **Correlation does not run.** The stage named `Correlating` calls
+>   `generate_report`.
+> - **There is no plugin host and no sandbox.** §Feature Matrix and
+>   `docs/PLUGIN_DEVELOPMENT.md` describe both.
+> - **Nothing is persisted.** §Database Schema's 26 tables are created by no code.
+> - **The declared MSRV of 1.75 does not compile.** The workspace is on edition 2021
+>   and the declared version is honest about *that*; the problem is that transitive
+>   dependencies have moved past it and now require the `edition2024` Cargo feature,
+>   which Cargo 1.75 does not have.
+>
+> Current documentation: [`docs/architecture/README.md`](docs/architecture/README.md).
+
+---
+
 > Generated: 2026-09-18
 > Version: 0.1.1
 > License: AGPL-3.0
