@@ -28,6 +28,23 @@ cd Spectra
 cargo build --release
 ```
 
+### Running the Server
+
+The API server refuses to start without an operator-supplied signing secret and
+an administrator account — there is no default for either.
+
+```bash
+export SPECTRA_JWT_SECRET="$(openssl rand -base64 48)"
+# Either choose a password (min 12 characters)...
+export SPECTRA_ADMIN_PASSWORD="choose-something-long"
+# ...or omit it and read the generated one from
+#   ~/.spectra/initial-admin-password
+cargo run --bin spectra-api
+```
+
+For the full set of variables, see [`.env.example`](.env.example) and
+[SECURITY.md](SECURITY.md).
+
 ### First Scan
 
 ```bash
@@ -240,6 +257,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full development guide.
 | spectra-config | 0.1.1 | Configuration management |
 | spectra-events | 0.1.1 | Event bus system |
 | spectra-storage | 0.1.1 | Storage abstractions |
+| spectra-auth | 0.1.1 | Authentication, JWT, and RBAC |
 | spectra-target | 0.1.1 | Target management |
 | spectra-http | 0.1.1 | HTTP client |
 | spectra-network | 0.1.1 | Network discovery |
@@ -257,10 +275,17 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full development guide.
 
 ## Testing
 
-387 tests across 21 crates. Run the full suite:
+662 tests across 21 crates, all passing. Run the full suite:
 
 ```bash
 cargo test --workspace
+```
+
+The suite is part of the merge gate, alongside:
+
+```bash
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all -- --check
 ```
 
 Per-crate testing:

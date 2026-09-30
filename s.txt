@@ -1,0 +1,2952 @@
+# Spectra v1.0
+
+## Complete Production Readiness, Integration, Security & Release Plan
+
+**Project:** Spectra
+**Organization:** Hilbras
+**Target Version:** `1.0.0`
+**Current Reported Version:** `0.1.1`
+**License:** AGPL-3.0
+**Primary Language:** Rust
+**Architecture:** Modular, extensible, distributed security testing and security analysis platform
+
+---
+
+# 1. v1.0 Mission
+
+Spectra v1.0 must represent the transition from a strong development foundation into a coherent, production-ready security platform.
+
+The objective is NOT to maximize the number of scanners.
+
+The objective is to ensure that every existing subsystem is:
+
+* implemented
+* integrated
+* persistent
+* observable
+* secure
+* testable
+* recoverable
+* documented
+* usable through the supported interfaces
+* compatible with future distributed execution
+* safe for authorized security testing
+* ready for real-world deployment
+
+The v1.0 definition of done is therefore:
+
+```text
+A user can create an organization/project/target,
+define scope,
+start a scan,
+have work scheduled,
+execute through workers,
+discover assets,
+crawl targets,
+fingerprint technologies,
+run scanners,
+produce observations,
+detect security conditions,
+create findings,
+verify findings,
+capture evidence,
+correlate results,
+persist everything,
+inspect results through API/CLI/Web,
+audit activity,
+and recover from failures.
+```
+
+The complete lifecycle must operate as a real runtime path:
+
+```text
+UNDERSTAND
+    ↓
+DISCOVER
+    ↓
+OBSERVE
+    ↓
+ANALYZE
+    ↓
+DETECT
+    ↓
+VERIFY
+    ↓
+CORRELATE
+    ↓
+EXPLAIN
+    ↓
+REPORT
+    ↓
+AUTOMATE
+```
+
+---
+
+# 2. Current State Baseline
+
+The current platform report describes:
+
+* 21 workspace crates
+* 18 library crates
+* 3 binary applications
+* approximately 19,424 Rust LOC
+* 577 SQL LOC
+* 6 database migrations
+* 3,659 documentation LOC
+* 387 tests
+* 20 REST endpoints
+* 14 CLI command groups
+* 26 database tables
+* `unsafe_code = "forbid"`
+* zero reported Clippy warnings
+
+The architecture currently contains:
+
+```text
+core
+config
+events
+storage
+telemetry
+target
+http
+network
+fingerprint
+crawler
+scanner
+findings
+evidence
+verification
+engine
+scheduler
+plugins
+sandbox
+
+apps:
+api
+cli
+worker
+```
+
+The report also identifies remaining work including:
+
+* PostgreSQL runtime wiring
+* Redis scheduler
+* authentication
+* WASM plugins
+* Python plugins
+* web frontend
+* Docker
+* GitHub Actions
+* crates.io publication
+* additional production infrastructure
+
+These items must be treated as implementation gaps rather than simply documentation tasks.
+
+---
+
+# 3. Phase 0 — Repository & Release Audit
+
+## Goal
+
+Establish the actual state of the repository before modifying architecture or deleting/replacing anything.
+
+### 0.1 Repository inventory
+
+Inspect:
+
+```text
+Cargo.toml
+Cargo.lock
+all workspace Cargo.toml files
+apps/*
+crates/*
+modules/*
+packages/*
+migrations/*
+docs/*
+tests/*
+infrastructure/*
+CI configuration
+Docker configuration
+npm configuration
+README
+CHANGELOG
+LICENSE
+SECURITY.md
+CONTRIBUTING.md
+```
+
+Determine:
+
+* actual workspace members
+* actual dependencies
+* unused dependencies
+* circular dependencies
+* feature flags
+* optional integrations
+* dead code
+* TODO/FIXME
+* placeholder implementations
+* mock implementations
+* hardcoded values
+* test-only paths accidentally used in production
+* default in-memory components
+* incomplete APIs
+
+### 0.2 Implementation audit
+
+For every subsystem answer:
+
+```text
+Does the code exist?
+Does it compile?
+Is it tested?
+Is it wired into runtime?
+Is it reachable from the engine?
+Does it persist data?
+Does it survive restart?
+Does it handle failure?
+Is it observable?
+Is it exposed through API/CLI where appropriate?
+```
+
+Do not accept:
+
+```rust
+todo!()
+unimplemented!()
+panic!("not implemented")
+```
+
+or equivalent production placeholders.
+
+### 0.3 Integration audit
+
+Verify the real execution graph:
+
+```text
+API
+ ↓
+Engine
+ ↓
+Scheduler
+ ↓
+Worker
+ ↓
+Execution
+ ↓
+Events
+ ↓
+Observation
+ ↓
+Detection
+ ↓
+Finding
+ ↓
+Verification
+ ↓
+Evidence
+ ↓
+Correlation
+ ↓
+Storage
+ ↓
+API / CLI / Web
+```
+
+Every arrow must correspond to actual executable code.
+
+### 0.4 Persistence audit
+
+Identify every stateful object.
+
+For each object determine:
+
+```text
+memory-only?
+database-backed?
+object-storage-backed?
+reconstructable?
+recoverable after restart?
+```
+
+No critical state may silently disappear after process restart.
+
+### 0.5 Version normalization
+
+The current report contains:
+
+```text
+Report: 0.1.1
+GitHub release: v0.1.0
+npm: 0.1.1
+```
+
+Normalize all version references.
+
+For the final release:
+
+```text
+Spectra = 1.0.0
+@spectra npm package = 1.0.0
+Rust crates = 1.0.0
+CLI version = 1.0.0
+API version = 1.0
+documentation = 1.0
+Git tag = v1.0.0
+GitHub release = v1.0.0
+```
+
+No conflicting versions.
+
+---
+
+# 4. Phase 1 — Architecture Freeze
+
+Before implementing major features, freeze the v1.0 architectural boundaries.
+
+## Required boundaries
+
+```text
+Core
+ ├── must not depend on Web
+ ├── must not depend directly on PostgreSQL
+ ├── must not depend directly on Redis
+ └── must remain reusable
+
+Scanner
+ ├── must not manipulate DB directly
+ ├── must communicate through contracts
+ └── must remain replaceable
+
+Plugin
+ ├── must use stable contracts
+ ├── must not bypass authorization/scope
+ └── must execute inside controlled runtime
+
+AI
+ ├── provider agnostic
+ ├── optional
+ └── must not be required for deterministic scanning
+
+Storage
+ ├── abstract
+ ├── PostgreSQL implementation
+ ├── local development implementation
+ └── future distributed implementations
+
+Execution
+ ├── separable from orchestration
+ ├── worker-compatible
+ └── retryable
+
+Web
+ └── consumer of API only
+```
+
+Create/update architecture documentation:
+
+```text
+docs/architecture/
+    overview.md
+    runtime.md
+    execution.md
+    storage.md
+    plugins.md
+    security.md
+    events.md
+    distributed.md
+```
+
+Create an ADR for every major architectural decision.
+
+---
+
+# 5. Phase 2 — Database & Persistence
+
+This is one of the highest-priority v1.0 phases.
+
+The current schema already contains 26 tables across six migrations. The problem is not schema existence; the problem is ensuring production runtime actually uses the persistent backend.
+
+## 5.1 PostgreSQL implementation
+
+Implement complete PostgreSQL support for:
+
+```text
+organizations
+projects
+users
+api_keys
+
+targets
+scopes
+scope_rules
+environments
+target_metadata
+
+assets
+asset_relationships
+ports
+dns_records
+
+scans
+scan_jobs
+scan_configs
+scan_progress
+
+findings
+observations
+evidence
+evidence_integrity
+detection_rules
+
+workers
+jobs
+audit_log
+metrics
+```
+
+## 5.2 Repository abstraction
+
+Create clear storage contracts:
+
+```text
+OrganizationRepository
+ProjectRepository
+TargetRepository
+AssetRepository
+ScanRepository
+JobRepository
+FindingRepository
+ObservationRepository
+EvidenceRepository
+WorkerRepository
+AuditRepository
+MetricsRepository
+```
+
+The engine should depend on repository interfaces rather than SQL.
+
+## 5.3 Transactions
+
+Critical operations must be transactional.
+
+Examples:
+
+```text
+create scan
+    → create scan record
+    → create jobs
+    → update scan state
+```
+
+```text
+finding verification
+    → update finding
+    → create verification result
+    → store evidence
+    → update audit record
+```
+
+Either the entire operation succeeds or it rolls back.
+
+## 5.4 Migration verification
+
+Every migration must:
+
+* apply from empty DB
+* apply sequentially
+* be idempotent where appropriate
+* work in CI
+* support rollback strategy where feasible
+* have integration tests
+
+## 5.5 Restart test
+
+Run:
+
+```text
+start Spectra
+create target
+create scan
+stop Spectra
+start Spectra
+```
+
+Verify:
+
+```text
+target exists
+scan exists
+jobs exist
+findings exist
+evidence exists
+audit records exist
+```
+
+---
+
+# 6. Phase 3 — Redis & Distributed Job System
+
+Replace:
+
+```text
+InMemoryJobQueue
+```
+
+for production execution with Redis-backed scheduling.
+
+## Required capabilities
+
+```text
+enqueue
+dequeue
+acknowledge
+retry
+delay
+priority
+lease
+timeout
+dead-letter
+cancel
+resume
+```
+
+## Job lifecycle
+
+```text
+QUEUED
+ ↓
+LEASED
+ ↓
+RUNNING
+ ↓
+COMPLETED
+```
+
+Failure:
+
+```text
+RUNNING
+ ↓
+FAILED
+ ↓
+RETRY
+ ↓
+QUEUED
+```
+
+Permanent failure:
+
+```text
+FAILED
+ ↓
+DEAD_LETTER
+```
+
+## Worker coordination
+
+Multiple workers must be able to operate simultaneously.
+
+Example:
+
+```text
+Worker A
+Worker B
+Worker C
+Worker D
+
+        ↓
+
+      Redis
+
+        ↓
+
+    PostgreSQL
+```
+
+Ensure two workers cannot execute the same leased job simultaneously.
+
+## Worker heartbeat
+
+Persist:
+
+```text
+worker_id
+hostname
+started_at
+last_heartbeat
+status
+capacity
+active_jobs
+version
+```
+
+Implement stale-worker detection.
+
+---
+
+# 7. Phase 4 — Authentication & Authorization
+
+Authentication is mandatory before calling Spectra v1.0 production-ready.
+
+Implement:
+
+```text
+users
+API keys
+sessions
+authentication
+authorization
+roles
+permissions
+```
+
+## Roles
+
+At minimum:
+
+```text
+Owner
+Admin
+Operator
+Analyst
+Viewer
+```
+
+## Permission model
+
+Examples:
+
+```text
+organization.read
+organization.write
+
+project.read
+project.write
+
+target.read
+target.write
+
+scan.read
+scan.execute
+scan.cancel
+
+finding.read
+finding.write
+
+evidence.read
+evidence.write
+
+worker.read
+worker.manage
+
+plugin.install
+plugin.execute
+
+admin.manage
+```
+
+Every sensitive API endpoint must enforce authorization.
+
+---
+
+# 8. Phase 5 — Scope & Target Safety
+
+Scope enforcement must become a platform-wide invariant.
+
+Every operation capable of interacting with a target must pass through scope validation.
+
+```text
+Target
+ ↓
+Scope Engine
+ ↓
+Authorization
+ ↓
+Execution
+```
+
+No scanner, crawler, plugin, worker, or verification module should be able to bypass this.
+
+## Scope model
+
+Support:
+
+```text
+hostname
+domain
+URL
+IPv4
+IPv6
+CIDR
+port
+path
+protocol
+```
+
+## Scope decisions
+
+Every request should produce a deterministic result:
+
+```text
+ALLOWED
+DENIED
+UNKNOWN
+```
+
+`UNKNOWN` must fail closed for security-sensitive execution.
+
+---
+
+# 9. Phase 6 — SSRF & Network Security Hardening
+
+The current report's URL sanitization should not be treated as complete SSRF protection.
+
+Implement defense in depth.
+
+## Protect against
+
+```text
+127.0.0.1
+localhost
+0.0.0.0
+::1
+private IPv4 ranges
+private IPv6 ranges
+link-local addresses
+multicast
+broadcast
+cloud metadata endpoints
+internal DNS
+redirect-based SSRF
+DNS rebinding
+IPv4/IPv6 bypasses
+encoded host tricks
+userinfo tricks
+alternate IP representations
+```
+
+## Request pipeline
+
+```text
+URL parse
+ ↓
+normalize
+ ↓
+resolve DNS
+ ↓
+validate resolved IPs
+ ↓
+connect
+ ↓
+revalidate redirects
+ ↓
+record destination
+```
+
+Redirects must be validated individually.
+
+DNS resolution must not be trusted solely from the original hostname.
+
+Proxy configuration must also respect scope and SSRF policy.
+
+---
+
+# 10. Phase 7 — Execution Engine
+
+The engine is the heart of Spectra.
+
+The report currently describes:
+
+```text
+discover
+→ crawl
+→ fingerprint
+→ scan
+→ observe
+→ verify
+→ report
+```
+
+v1.0 must ensure this is an actual executable pipeline.
+
+## Engine abstraction
+
+Define:
+
+```text
+ExecutionContext
+ExecutionPlan
+ExecutionStep
+ExecutionResult
+ExecutionPolicy
+ExecutionState
+```
+
+Each stage should have:
+
+```text
+input
+output
+timeout
+retry policy
+cancellation
+progress
+events
+telemetry
+errors
+```
+
+## Pipeline
+
+```text
+Target
+ ↓
+Scope validation
+ ↓
+Discovery
+ ↓
+Asset collection
+ ↓
+Network analysis
+ ↓
+Fingerprinting
+ ↓
+Crawling
+ ↓
+Scanning
+ ↓
+Observation
+ ↓
+Detection
+ ↓
+Candidate Finding
+ ↓
+Verification
+ ↓
+Evidence
+ ↓
+Correlation
+ ↓
+Report
+```
+
+---
+
+# 11. Phase 8 — Discovery & Network Layer
+
+Complete and harden:
+
+```text
+DNS
+port discovery
+asset discovery
+relationship mapping
+service discovery
+network exposure
+```
+
+The network layer must emit structured results rather than opaque strings.
+
+Example:
+
+```text
+Asset
+ ├── hostname
+ ├── IP
+ ├── service
+ ├── port
+ ├── protocol
+ └── metadata
+```
+
+Every discovered asset should have a stable identity.
+
+---
+
+# 12. Phase 9 — Fingerprinting
+
+Maintain the current fingerprinting architecture and expand only where justified.
+
+Current architecture already includes 60+ fingerprint rules across multiple categories.
+
+v1.0 requirements:
+
+```text
+deterministic matching
+confidence score
+evidence
+version detection
+conflict handling
+rule metadata
+```
+
+Example:
+
+```text
+Technology:
+    nginx
+
+Version:
+    1.24.x
+
+Confidence:
+    0.94
+
+Evidence:
+    Server header
+    response behavior
+    known signature
+```
+
+Do not allow fingerprinting to create false certainty.
+
+---
+
+# 13. Phase 10 — Crawler
+
+Complete crawler production hardening.
+
+Requirements:
+
+```text
+BFS/controlled traversal
+scope enforcement
+robots handling
+redirect handling
+content-type filtering
+depth limits
+URL normalization
+duplicate prevention
+rate limiting
+timeouts
+cancellation
+large-response protection
+```
+
+Persist crawl state for long-running scans.
+
+Support:
+
+```text
+pause
+resume
+cancel
+restart recovery
+```
+
+---
+
+# 14. Phase 11 — Scanner Framework
+
+Do not attempt to create dozens of scanners before the framework is stable.
+
+Current built-ins include:
+
+```text
+SQL Injection
+XSS
+Directory Discovery
+```
+
+v1.0 should first make the scanner framework robust.
+
+## Scanner contract
+
+Each scanner should define:
+
+```text
+id
+name
+version
+description
+capabilities
+requirements
+scope requirements
+configuration schema
+execute()
+```
+
+## Scanner result
+
+```text
+ScannerResult
+ ├── observations
+ ├── evidence
+ ├── confidence
+ ├── metadata
+ └── execution information
+```
+
+## Safety
+
+Scanners must respect:
+
+```text
+target scope
+rate limits
+timeouts
+request budgets
+concurrency limits
+authorization
+```
+
+---
+
+# 15. Phase 12 — Observation Engine
+
+The current system contains 13 observation categories.
+
+Preserve the typed observation architecture.
+
+Each observation must contain:
+
+```text
+id
+type
+target
+asset
+source
+timestamp
+confidence
+severity where applicable
+metadata
+evidence references
+```
+
+Observation must remain separate from finding.
+
+This distinction is important:
+
+```text
+Observation
+    ↓
+Security fact / signal
+
+Detection
+    ↓
+Interpretation
+
+Finding
+    ↓
+Actionable security issue
+```
+
+---
+
+# 16. Phase 13 — Detection Engine
+
+Review the current eight detection rules.
+
+Separate:
+
+```text
+true detection rules
+```
+
+from:
+
+```text
+metadata/state classification
+```
+
+The existing "High Confidence" rule should be reviewed because confidence is not necessarily a security condition.
+
+Detection rules should support:
+
+```text
+AND
+OR
+NOT
+thresholds
+severity
+confidence
+technology conditions
+asset conditions
+observation conditions
+custom expressions
+```
+
+Example:
+
+```text
+IF
+    observation.type == "InformationDisclosure"
+AND
+    observation.confidence >= 0.8
+AND
+    target.environment == "production"
+
+THEN
+    create Finding
+```
+
+---
+
+# 17. Phase 14 — Finding Lifecycle
+
+Standardize:
+
+```text
+NEW
+CONFIRMED
+INVESTIGATING
+FIXED
+FALSE_POSITIVE
+DUPLICATE
+ACCEPTED
+```
+
+Implement state transition validation.
+
+Invalid transitions must fail.
+
+Example:
+
+```text
+NEW → CONFIRMED
+NEW → FALSE_POSITIVE
+
+CONFIRMED → INVESTIGATING
+CONFIRMED → FIXED
+
+INVESTIGATING → FIXED
+INVESTIGATING → ACCEPTED
+```
+
+Every transition must create an audit event.
+
+---
+
+# 18. Phase 15 — Verification Engine
+
+Verification must be independent from initial detection.
+
+Pipeline:
+
+```text
+Detection
+ ↓
+Candidate Finding
+ ↓
+Verification
+ ↓
+Confirmed / Rejected
+```
+
+Verification must record:
+
+```text
+verification_id
+finding_id
+method
+timestamp
+result
+confidence
+request/response metadata
+evidence references
+error information
+```
+
+Never represent a finding as confirmed merely because a scanner produced an initial signal.
+
+---
+
+# 19. Phase 16 — Evidence System
+
+The existing evidence subsystem must become production-grade.
+
+Evidence requirements:
+
+```text
+typed
+redacted
+integrity-protected
+traceable
+associated with finding
+associated with verification
+```
+
+Integrity:
+
+```text
+content
+ ↓
+hash
+ ↓
+stored evidence
+```
+
+Verification:
+
+```text
+stored content
+ ↓
+recalculate hash
+ ↓
+compare
+```
+
+Sensitive data must never accidentally enter logs.
+
+---
+
+# 20. Phase 17 — Correlation Engine
+
+Correlate related observations/findings.
+
+Examples:
+
+```text
+same asset
+same endpoint
+same vulnerability class
+same root cause
+same technology
+same evidence
+same scan
+```
+
+Correlation should produce relationships rather than silently merging findings.
+
+Support:
+
+```text
+duplicate
+related
+caused-by
+depends-on
+same-root-cause
+```
+
+---
+
+# 21. Phase 18 — Reporting
+
+Implement stable report generation.
+
+Formats:
+
+```text
+JSON
+Markdown
+HTML
+CSV
+SARIF
+```
+
+If a format is not appropriate for v1.0, document the limitation instead of producing a fake implementation.
+
+Reports should include:
+
+```text
+scan metadata
+target
+scope
+assets
+technologies
+observations
+findings
+severity
+confidence
+verification
+evidence references
+timestamps
+recommendations
+```
+
+---
+
+# 22. Phase 19 — CLI Completion
+
+The CLI should be a complete operational interface.
+
+Required areas:
+
+```text
+auth
+config
+organization
+project
+target
+scope
+scan
+finding
+observation
+evidence
+verification
+worker
+plugin
+report
+stats
+```
+
+Every command must:
+
+* use real API/core functionality
+* return useful exit codes
+* support JSON output
+* support human-readable output
+* display errors clearly
+* respect authentication
+* respect authorization
+
+Example:
+
+```bash
+spectra target create
+spectra scan run
+spectra scan status
+spectra finding list
+spectra finding show
+spectra report generate
+```
+
+No command may remain a stub.
+
+---
+
+# 23. Phase 20 — REST API v1
+
+Finalize the API contract.
+
+Implement:
+
+```text
+authentication
+organizations
+projects
+targets
+scopes
+scans
+jobs
+findings
+observations
+evidence
+verification
+workers
+plugins
+reports
+statistics
+audit
+```
+
+API requirements:
+
+```text
+versioning
+validation
+authentication
+authorization
+pagination
+filtering
+sorting
+consistent errors
+request IDs
+rate limiting
+OpenAPI specification
+```
+
+Use:
+
+```text
+/api/v1/*
+```
+
+for the v1 API.
+
+---
+
+# 24. Phase 21 — Web Application
+
+Build the Web UI after the backend contracts stabilize.
+
+The web application must consume the API rather than directly access internal crates.
+
+Core pages:
+
+```text
+Dashboard
+Organizations
+Projects
+Targets
+Target Details
+Assets
+Scans
+Scan Details
+Findings
+Finding Details
+Observations
+Evidence
+Workers
+Plugins
+Reports
+Settings
+Audit Log
+```
+
+## Dashboard
+
+Display:
+
+```text
+active scans
+workers
+targets
+assets
+findings
+severity distribution
+recent activity
+scan health
+```
+
+## Scan page
+
+Display live:
+
+```text
+queued
+running
+completed
+failed
+progress
+current stage
+worker
+events
+findings
+```
+
+---
+
+# 25. Phase 22 — Event System
+
+The existing typed event system must become the backbone for observability and UI updates.
+
+Events should cover:
+
+```text
+target events
+asset events
+scan events
+job events
+worker events
+observation events
+finding events
+verification events
+evidence events
+plugin events
+security events
+audit events
+```
+
+Support:
+
+```text
+event ID
+timestamp
+source
+correlation ID
+causation ID
+payload
+version
+```
+
+This enables reliable tracing across the platform.
+
+---
+
+# 26. Phase 23 — Observability
+
+Implement complete OpenTelemetry integration.
+
+Collect:
+
+```text
+traces
+metrics
+logs
+```
+
+Important metrics:
+
+```text
+scan duration
+job duration
+job failures
+retry count
+worker utilization
+requests
+timeouts
+scanner execution
+findings
+verification success
+queue depth
+database latency
+Redis latency
+```
+
+Every scan should have a correlation/trace identity.
+
+Example:
+
+```text
+scan_id
+ ↓
+job_id
+ ↓
+worker
+ ↓
+scanner
+ ↓
+finding
+ ↓
+verification
+```
+
+---
+
+# 27. Phase 24 — Plugin Architecture
+
+The plugin architecture must be stable before opening broad extension support.
+
+Plugin types:
+
+```text
+Rust
+WASM
+Python
+```
+
+Each plugin requires:
+
+```text
+manifest
+id
+version
+runtime
+permissions
+capabilities
+configuration
+checksum
+signature where applicable
+```
+
+Plugins must never automatically receive unrestricted system access.
+
+---
+
+# 28. Phase 25 — WASM Sandbox
+
+Implement WASM execution with:
+
+```text
+resource limits
+memory limits
+execution timeout
+filesystem restrictions
+network policy
+capability-based permissions
+logging
+termination
+```
+
+A plugin should only receive capabilities explicitly granted.
+
+Example:
+
+```text
+plugin:
+    network = target-scope-only
+    filesystem = none
+    subprocess = false
+    secrets = none
+```
+
+---
+
+# 29. Phase 26 — Python Plugin Runtime
+
+Python plugins should execute outside the Rust process.
+
+Architecture:
+
+```text
+Rust Spectra
+      ↓
+Plugin Runner
+      ↓
+Python process
+      ↓
+IPC / protocol
+      ↓
+Spectra
+```
+
+Never embed arbitrary Python execution directly into the main API process.
+
+Apply:
+
+```text
+timeouts
+resource limits
+environment isolation
+filesystem policy
+network policy
+process termination
+```
+
+---
+
+# 30. Phase 27 — Security Hardening
+
+Perform a dedicated security audit.
+
+## Application security
+
+Review:
+
+```text
+authentication
+authorization
+session management
+API keys
+secret storage
+input validation
+output encoding
+SQL injection
+command injection
+path traversal
+SSRF
+XXE
+deserialization
+template injection
+prototype pollution where applicable
+```
+
+## Infrastructure security
+
+Review:
+
+```text
+container privileges
+network exposure
+database credentials
+Redis credentials
+TLS
+filesystem permissions
+logging
+secrets
+environment variables
+```
+
+## Supply chain
+
+Run:
+
+```text
+cargo audit
+cargo deny
+dependency review
+npm audit
+license review
+SBOM generation
+```
+
+---
+
+# 31. Phase 28 — Secrets Management
+
+Secrets must never be:
+
+```text
+hardcoded
+committed
+logged
+returned in API responses
+stored in plain evidence
+```
+
+Support environment/config secret references.
+
+Sensitive values must be redacted.
+
+Example:
+
+```text
+API_KEY=********
+PASSWORD=********
+TOKEN=********
+```
+
+---
+
+# 32. Phase 29 — Rate Limiting & Resource Governance
+
+Implement limits at multiple levels:
+
+```text
+organization
+project
+target
+scan
+worker
+scanner
+plugin
+API
+```
+
+Controls:
+
+```text
+requests/second
+concurrency
+timeout
+CPU
+memory
+queue depth
+scan duration
+```
+
+This prevents one scan from consuming the entire platform.
+
+---
+
+# 33. Phase 30 — Failure Recovery
+
+Every long-running operation must survive failure.
+
+Test:
+
+```text
+API crash
+worker crash
+Redis restart
+PostgreSQL restart
+network failure
+scanner timeout
+plugin crash
+machine restart
+```
+
+Expected behavior:
+
+```text
+detect failure
+ ↓
+persist state
+ ↓
+recover/retry
+ ↓
+continue or mark failed
+```
+
+No scan should become permanently "running" because a worker disappeared.
+
+---
+
+# 34. Phase 31 — Testing Strategy
+
+The current report contains 387 passing tests.
+
+v1.0 must expand testing by category.
+
+## Unit tests
+
+Every core component.
+
+## Integration tests
+
+Test:
+
+```text
+API + PostgreSQL
+API + Redis
+worker + Redis
+worker + PostgreSQL
+engine + storage
+scanner + engine
+verification + evidence
+```
+
+## End-to-end
+
+At minimum:
+
+```text
+create target
+ ↓
+create scope
+ ↓
+start scan
+ ↓
+worker executes
+ ↓
+asset discovered
+ ↓
+scanner executes
+ ↓
+observation created
+ ↓
+detection occurs
+ ↓
+finding created
+ ↓
+verification runs
+ ↓
+evidence stored
+ ↓
+finding correlated
+ ↓
+report generated
+```
+
+## Recovery tests
+
+Restart components during execution.
+
+## Security tests
+
+Attack the platform itself.
+
+## Fuzzing
+
+Target:
+
+```text
+URL parser
+scope parser
+HTTP handling
+protocol parser
+plugin protocol
+configuration parser
+detection expressions
+```
+
+## Property tests
+
+Especially:
+
+```text
+scope evaluation
+URL normalization
+state transitions
+finding lifecycle
+queue semantics
+```
+
+---
+
+# 35. Phase 32 — Performance Testing
+
+Create realistic workloads.
+
+Examples:
+
+```text
+100 targets
+1,000 assets
+10,000 URLs
+100 concurrent jobs
+multiple workers
+large evidence sets
+```
+
+Measure:
+
+```text
+throughput
+latency
+memory
+CPU
+database load
+queue latency
+worker utilization
+```
+
+Define v1.0 performance budgets.
+
+Do not optimize blindly; measure first.
+
+---
+
+# 36. Phase 33 — Distributed Deployment
+
+Support:
+
+```text
+API instances
+worker instances
+Redis
+PostgreSQL
+object storage
+telemetry collector
+web frontend
+```
+
+Architecture:
+
+```text
+                    ┌──────────────┐
+                    │    Web UI    │
+                    └──────┬───────┘
+                           │
+                    ┌──────▼───────┐
+                    │   API Layer  │
+                    └──────┬───────┘
+                           │
+              ┌────────────┴────────────┐
+              │                         │
+       ┌──────▼──────┐          ┌───────▼──────┐
+       │ PostgreSQL  │          │    Redis     │
+       └─────────────┘          └───────┬───────┘
+                                        │
+                   ┌────────────────────┼────────────────────┐
+                   │                    │                    │
+              ┌────▼────┐          ┌────▼────┐          ┌────▼────┐
+              │ Worker 1│          │ Worker 2│          │ Worker N│
+              └─────────┘          └─────────┘          └─────────┘
+```
+
+Single-machine deployment must still work.
+
+---
+
+# 37. Phase 34 — Docker
+
+Provide production-oriented containers:
+
+```text
+spectra-api
+spectra-worker
+spectra-web
+spectra-cli
+```
+
+Infrastructure:
+
+```text
+postgres
+redis
+otel-collector
+```
+
+Create:
+
+```text
+docker-compose.yml
+docker-compose.dev.yml
+docker-compose.production.yml
+```
+
+Do not run services as root unless required.
+
+Use minimal images.
+
+---
+
+# 38. Phase 35 — CI/CD
+
+Implement GitHub Actions.
+
+Pipeline:
+
+```text
+format
+ ↓
+clippy
+ ↓
+unit tests
+ ↓
+integration tests
+ ↓
+security audit
+ ↓
+build
+ ↓
+container build
+ ↓
+package
+ ↓
+release
+```
+
+Required checks:
+
+```text
+cargo fmt --check
+cargo clippy
+cargo test
+cargo audit
+cargo deny
+npm tests/build
+Docker build
+migration tests
+```
+
+No release should occur if any mandatory check fails.
+
+---
+
+# 39. Phase 36 — Documentation
+
+v1.0 documentation must include:
+
+```text
+README
+Quick Start
+Installation
+Architecture
+CLI
+API
+Configuration
+Authentication
+Authorization
+Targets
+Scope
+Scanning
+Findings
+Evidence
+Verification
+Plugins
+WASM
+Python
+Workers
+Distributed Deployment
+Docker
+Security
+Troubleshooting
+Development
+Contributing
+```
+
+Also create:
+
+```text
+SECURITY.md
+CHANGELOG.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+LICENSE
+```
+
+---
+
+# 40. Phase 37 — SDK & Client Contracts
+
+Finalize stable contracts for external integrations.
+
+Potential packages:
+
+```text
+@spectra/sdk
+@spectra/types
+@spectra/protocol
+```
+
+The exact package names must be decided before publication and kept consistent.
+
+SDK must support:
+
+```text
+authentication
+targets
+scans
+findings
+observations
+evidence
+reports
+```
+
+Generate or maintain API types from the canonical API specification where practical.
+
+---
+
+# 41. Phase 38 — Crates.io
+
+If Rust crates are intended for public consumption:
+
+* define publishable crates
+* verify package metadata
+* verify licenses
+* verify README
+* verify repository URL
+* verify documentation URL
+* verify dependency declarations
+* perform dry-run publishing
+* publish only stable public crates
+
+Do not publish internal crates merely because they exist in the workspace.
+
+---
+
+# 42. Phase 39 — npm
+
+Determine the final npm package architecture.
+
+If the package is:
+
+```text
+@spectra/spectra
+```
+
+or:
+
+```text
+@hilbras/spectra
+```
+
+choose ONE canonical identity.
+
+Then:
+
+```text
+package name
+version
+README
+license
+repository
+homepage
+bin
+dependencies
+files
+```
+
+must all be finalized.
+
+Do not delete/unpublish the existing package before confirming:
+
+```text
+new package builds
+new package installs
+CLI works
+version is correct
+registry metadata is correct
+```
+
+If npm does not permit deletion/unpublishing under its current rules, use the supported deprecation/transition strategy rather than attempting destructive workarounds.
+
+---
+
+# 43. Phase 40 — Release Candidate
+
+Create:
+
+```text
+v1.0.0-rc.1
+```
+
+before final release.
+
+Freeze features.
+
+Only fix:
+
+```text
+critical bugs
+security issues
+release blockers
+documentation errors
+packaging errors
+```
+
+No new major architecture after RC.
+
+---
+
+# 44. Phase 41 — Full Release Audit
+
+Create a checklist covering:
+
+## Architecture
+
+```text
+[ ] boundaries respected
+[ ] dependency graph clean
+[ ] no circular dependencies
+[ ] no production stubs
+```
+
+## Runtime
+
+```text
+[ ] API works
+[ ] worker works
+[ ] scheduler works
+[ ] Redis works
+[ ] PostgreSQL works
+[ ] scan pipeline works
+```
+
+## Security
+
+```text
+[ ] authentication
+[ ] authorization
+[ ] scope enforcement
+[ ] SSRF protection
+[ ] secrets
+[ ] rate limiting
+[ ] sandboxing
+[ ] audit logging
+```
+
+## Data
+
+```text
+[ ] persistence
+[ ] migrations
+[ ] transactions
+[ ] evidence integrity
+[ ] recovery
+```
+
+## Interfaces
+
+```text
+[ ] CLI
+[ ] REST API
+[ ] Web
+[ ] SDK
+```
+
+## Testing
+
+```text
+[ ] unit
+[ ] integration
+[ ] E2E
+[ ] fuzz
+[ ] security
+[ ] performance
+```
+
+## Distribution
+
+```text
+[ ] binaries
+[ ] npm
+[ ] crates.io where applicable
+[ ] Docker
+[ ] GitHub
+```
+
+---
+
+# 45. Phase 42 — Real-World E2E Scenario
+
+Before release, execute a complete authorized test environment.
+
+Example:
+
+```text
+Test Environment
+        ↓
+Create Organization
+        ↓
+Create Project
+        ↓
+Create Target
+        ↓
+Define Scope
+        ↓
+Launch Scan
+        ↓
+Scheduler
+        ↓
+Worker
+        ↓
+Discovery
+        ↓
+Crawler
+        ↓
+Fingerprint
+        ↓
+Scanner
+        ↓
+Observation
+        ↓
+Detection
+        ↓
+Candidate Finding
+        ↓
+Verification
+        ↓
+Evidence
+        ↓
+Correlation
+        ↓
+Report
+```
+
+Validate every stage through:
+
+```text
+database
+events
+logs
+metrics
+API
+CLI
+Web
+```
+
+The same scan should tell a consistent story across all interfaces.
+
+---
+
+# 46. Phase 43 — Backup Before Repository Replacement
+
+Only after RC validation:
+
+Create immutable backups of:
+
+```text
+Git repository
+tags
+branches
+release artifacts
+npm package metadata
+documentation
+configuration
+migration files
+```
+
+Export:
+
+```text
+source archive
+database schema
+release artifacts
+package artifacts
+```
+
+Tag the last pre-v1 state:
+
+```text
+v0.1.x-final
+```
+
+Do not destroy the old history until the new release has been independently verified.
+
+---
+
+# 47. Phase 44 — GitHub Repository Transition
+
+The intended final repository:
+
+```text
+https://github.com/Hilbras/Spectra
+```
+
+Before replacement:
+
+```text
+backup
+ ↓
+validate
+ ↓
+tag
+ ↓
+replace/clean repository
+ ↓
+push final v1.0 code
+ ↓
+verify clone
+ ↓
+verify clean build
+```
+
+A clean external clone must successfully perform:
+
+```bash
+git clone
+cargo build --workspace
+cargo test --workspace
+```
+
+No local-only dependency may be required.
+
+---
+
+# 48. Phase 45 — GitHub Release
+
+Create:
+
+```text
+v1.0.0
+```
+
+Release contents:
+
+```text
+source archive
+CLI binaries where applicable
+checksums
+Docker references
+npm package information
+documentation
+CHANGELOG
+migration information
+upgrade instructions
+```
+
+Release notes should clearly state:
+
+```text
+what is new
+breaking changes
+installation
+upgrade
+known limitations
+security notes
+```
+
+---
+
+# 49. Phase 46 — npm Release
+
+Publish:
+
+```text
+1.0.0
+```
+
+Then perform an external installation test:
+
+```bash
+npm install -g <final-package>
+```
+
+Verify:
+
+```bash
+spectra --version
+spectra --help
+spectra config
+spectra target
+spectra scan
+```
+
+The version must report:
+
+```text
+1.0.0
+```
+
+---
+
+# 50. Phase 47 — Post-Release Verification
+
+After publication:
+
+Use a clean machine/environment.
+
+Test:
+
+```text
+GitHub clone
+npm installation
+Docker deployment
+CLI
+API
+database migrations
+worker
+Redis
+complete scan
+report generation
+```
+
+Verify the published artifacts rather than the local repository.
+
+---
+
+# 51. Phase 48 — v1.0.1 Stabilization Window
+
+After v1.0 release:
+
+Do not immediately add major features.
+
+Monitor:
+
+```text
+installation failures
+runtime crashes
+worker failures
+database problems
+security reports
+plugin failures
+performance issues
+API compatibility
+```
+
+Release:
+
+```text
+v1.0.1
+v1.0.2
+...
+```
+
+for bug/security fixes as necessary.
+
+Patch versions must remain backward-compatible whenever possible.
+
+---
+
+# 52. Definition of Done
+
+Spectra is v1.0 only when all critical requirements are satisfied.
+
+## Mandatory
+
+```text
+[ ] PostgreSQL production persistence
+[ ] Redis production scheduler
+[ ] worker recovery
+[ ] authentication
+[ ] authorization
+[ ] complete scope enforcement
+[ ] hardened SSRF protection
+[ ] real scan pipeline
+[ ] observation → detection → finding
+[ ] finding → verification
+[ ] verification → evidence
+[ ] correlation
+[ ] audit logging
+[ ] API v1
+[ ] CLI complete
+[ ] Web operational
+[ ] plugin contracts
+[ ] sandbox controls
+[ ] security audit
+[ ] E2E tests
+[ ] failure recovery tests
+[ ] CI/CD
+[ ] Docker
+[ ] documentation
+[ ] release automation
+[ ] clean external installation
+```
+
+---
+
+# 53. What NOT To Do Before v1.0
+
+Do NOT spend the remaining development time primarily on:
+
+```text
+hundreds of new scanners
+AI features
+marketing features
+complex dashboards
+unnecessary microservices
+premature Kubernetes
+massive plugin ecosystem
+experimental features
+```
+
+until the core runtime is proven.
+
+The priority is:
+
+```text
+CORRECTNESS
+    ↓
+INTEGRATION
+    ↓
+PERSISTENCE
+    ↓
+SECURITY
+    ↓
+RECOVERY
+    ↓
+OBSERVABILITY
+    ↓
+USABILITY
+    ↓
+DISTRIBUTION
+    ↓
+EXTENSIBILITY
+```
+
+---
+
+# 54. Recommended Implementation Order
+
+The AI coding agent should execute the work in this exact order:
+
+```text
+PHASE 0
+Release Audit
+
+↓
+
+PHASE 1
+Architecture Freeze
+
+↓
+
+PHASE 2
+PostgreSQL
+
+↓
+
+PHASE 3
+Redis + Scheduler
+
+↓
+
+PHASE 4
+Authentication + Authorization
+
+↓
+
+PHASE 5
+Scope Enforcement
+
+↓
+
+PHASE 6
+SSRF / Network Security
+
+↓
+
+PHASE 7
+Execution Engine Integration
+
+↓
+
+PHASE 8
+Discovery / Network
+
+↓
+
+PHASE 9
+Fingerprinting
+
+↓
+
+PHASE 10
+Crawler
+
+↓
+
+PHASE 11
+Scanner Framework
+
+↓
+
+PHASE 12
+Observation
+
+↓
+
+PHASE 13
+Detection
+
+↓
+
+PHASE 14
+Findings
+
+↓
+
+PHASE 15
+Verification
+
+↓
+
+PHASE 16
+Evidence
+
+↓
+
+PHASE 17
+Correlation
+
+↓
+
+PHASE 18
+Reporting
+
+↓
+
+PHASE 19
+CLI
+
+↓
+
+PHASE 20
+API v1
+
+↓
+
+PHASE 21
+Web
+
+↓
+
+PHASE 22
+Events
+
+↓
+
+PHASE 23
+Observability
+
+↓
+
+PHASE 24
+Plugin Architecture
+
+↓
+
+PHASE 25
+WASM Sandbox
+
+↓
+
+PHASE 26
+Python Runtime
+
+↓
+
+PHASE 27
+Security Audit
+
+↓
+
+PHASE 28
+Secrets
+
+↓
+
+PHASE 29
+Resource Governance
+
+↓
+
+PHASE 30
+Failure Recovery
+
+↓
+
+PHASE 31
+Testing
+
+↓
+
+PHASE 32
+Performance
+
+↓
+
+PHASE 33
+Distributed Deployment
+
+↓
+
+PHASE 34
+Docker
+
+↓
+
+PHASE 35
+CI/CD
+
+↓
+
+PHASE 36
+Documentation
+
+↓
+
+PHASE 37
+SDK
+
+↓
+
+PHASE 38
+crates.io
+
+↓
+
+PHASE 39
+npm
+
+↓
+
+PHASE 40
+Release Candidate
+
+↓
+
+PHASE 41
+Full Release Audit
+
+↓
+
+PHASE 42
+E2E Certification
+
+↓
+
+PHASE 43
+Backup
+
+↓
+
+PHASE 44
+GitHub Transition
+
+↓
+
+PHASE 45
+GitHub v1.0.0 Release
+
+↓
+
+PHASE 46
+npm v1.0.0 Release
+
+↓
+
+PHASE 47
+External Verification
+
+↓
+
+PHASE 48
+v1.0.x Stabilization
+```
+
+---
+
+# 55. Final v1.0 Architecture
+
+The target architecture should converge toward:
+
+```text
+                         ┌──────────────────┐
+                         │      Web UI      │
+                         └────────┬─────────┘
+                                  │
+                         ┌────────▼─────────┐
+                         │     REST API     │
+                         │      /v1         │
+                         └────────┬─────────┘
+                                  │
+                ┌─────────────────▼─────────────────┐
+                │           CONTROL PLANE           │
+                │                                    │
+                │ Auth / Scope / Scheduler / Engine │
+                │ Policy / Automation / Reporting   │
+                └─────────────────┬─────────────────┘
+                                  │
+                         ┌────────▼─────────┐
+                         │      Redis       │
+                         │  Jobs / Events   │
+                         └────────┬─────────┘
+                                  │
+              ┌───────────────────┼───────────────────┐
+              │                   │                   │
+       ┌──────▼──────┐     ┌──────▼──────┐     ┌──────▼──────┐
+       │   Worker 1  │     │   Worker 2  │     │   Worker N  │
+       └──────┬──────┘     └──────┬──────┘     └──────┬──────┘
+              │                   │                   │
+              └───────────────────┼───────────────────┘
+                                  │
+                         ┌────────▼─────────┐
+                         │ EXECUTION ENGINE │
+                         └────────┬─────────┘
+                                  │
+       ┌────────────┬─────────────┼─────────────┬──────────────┐
+       │            │             │             │              │
+   Discovery     Crawler     Fingerprint    Scanner       Plugins
+       │            │             │             │              │
+       └────────────┴─────────────┼─────────────┴──────────────┘
+                                  │
+                         ┌────────▼─────────┐
+                         │   OBSERVATIONS   │
+                         └────────┬─────────┘
+                                  │
+                         ┌────────▼─────────┐
+                         │    DETECTION     │
+                         └────────┬─────────┘
+                                  │
+                         ┌────────▼─────────┐
+                         │     FINDINGS     │
+                         └────────┬─────────┘
+                                  │
+                         ┌────────▼─────────┐
+                         │   VERIFICATION   │
+                         └────────┬─────────┘
+                                  │
+                         ┌────────▼─────────┐
+                         │     EVIDENCE     │
+                         └────────┬─────────┘
+                                  │
+                         ┌────────▼─────────┐
+                         │   CORRELATION    │
+                         └────────┬─────────┘
+                                  │
+                ┌─────────────────┴─────────────────┐
+                │                                   │
+        ┌───────▼────────┐                 ┌────────▼───────┐
+        │   PostgreSQL   │                 │ Object Storage │
+        └────────────────┘                 └────────────────┘
+```
+
+---
+
+# 56. v1.0 Philosophy
+
+Spectra v1.0 should not be defined by:
+
+```text
+number of scanners
+number of endpoints
+number of lines of code
+number of plugins
+```
+
+It should be defined by:
+
+```text
+Can the platform execute reliably?
+Can it enforce scope?
+Can it preserve evidence?
+Can it recover from failure?
+Can it support multiple workers?
+Can it persist state?
+Can every finding be explained and verified?
+Can operators trust the execution state?
+Can external developers extend it safely?
+Can a clean machine install and operate it?
+```
+
+The final milestone is:
+
+```text
+Spectra v0.x
+    ↓
+Feature-complete foundation
+    ↓
+Integration
+    ↓
+Production hardening
+    ↓
+Security validation
+    ↓
+Release Candidate
+    ↓
+External verification
+    ↓
+Spectra v1.0.0
+```
+
+The project should enter feature freeze only after the runtime path is proven end-to-end.
+
