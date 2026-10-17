@@ -1,6 +1,6 @@
 {
   "name": "@hilbras/spectra",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Modular, extensible, distributed security testing and analysis platform",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

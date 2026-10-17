@@ -5,7 +5,20 @@ All notable changes to Spectra will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## ## [0.1.2] - 2026-10-18
+## [0.1.3] - 2026-10-18
+
+### Added
+- `JobRepository::list_all()` for durable scan-job listing (Postgres + in-memory)
+
+### Changed
+- `GET /scans` reads from Postgres when `SPECTRA_DATABASE_URL` is set, falling back to in-memory otherwise
+- `GET /scans/:id` falls back to Postgres when the scan is not in the in-memory map, so scans created via `POST /scans` remain readable after a restart
+
+### Fixed
+- `@hilbras/spectra` npm `cli.js` wrapper resolves symlinks so `dirname` points at the real `dist/` directory when invoked through an npm global-bin symlink
+- `repository.url` in `npm/package.json` changed from `https://` to `git+https://`
+
+## [0.1.2] - 2026-10-18
 
 ### Added
 - `JobRepository::list_all()` for durable scan-job listing (Postgres + in-memory)
