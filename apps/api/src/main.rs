@@ -25,12 +25,15 @@ use spectra_target::{
 };
 use spectra_verification::VerificationEngine;
 
+use chrono::Utc;
 use spectra_core::audit::AuditLogger;
 use spectra_core::governance::{ResourceGovernor, ResourceLimits};
 use spectra_core::recovery::RecoveryManager;
 use spectra_core::secrets::SecretManager;
 use spectra_core::SSRFGuard;
 use spectra_events::EventBus;
+use spectra_storage::pg::PostgresDatabase;
+use spectra_storage::repositories::{JobRecord, JobRepository, ScanRecord};
 
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHasher, PasswordVerifier, SaltString},
@@ -215,6 +218,7 @@ struct AppState {
     scan_jobs: Arc<RwLock<HashMap<String, ScanJob>>>,
     user_store: UserStore,
     login_throttle: LoginThrottle,
+    database: Option<Arc<PostgresDatabase>>,
 }
 
 // =============================================================================
@@ -308,8 +312,25 @@ struct ComponentStatus {
 
 static START_TIME: once_cell::sync::Lazy<Instant> = once_cell::sync::Lazy::new(Instant::now);
 
-async fn health_check() -> Json<HealthResponse> {
+async fn health_check(State(state): State<AppState>) -> Json<HealthResponse> {
     let uptime = START_TIME.elapsed().as_secs();
+
+    let database = match &state.database {
+        Some(db) => match db.ping().await {
+            Ok(()) => ComponentStatus {
+                status: "healthy".to_string(),
+                message: None,
+            },
+            Err(e) => ComponentStatus {
+                status: "unhealthy".to_string(),
+                message: Some(e.to_string()),
+            },
+        },
+        None => ComponentStatus {
+            status: "unknown".to_string(),
+            message: Some("Not configured".to_string()),
+        },
+    };
 
     Json(HealthResponse {
         status: "healthy".to_string(),
@@ -320,10 +341,7 @@ async fn health_check() -> Json<HealthResponse> {
                 status: "healthy".to_string(),
                 message: None,
             },
-            database: ComponentStatus {
-                status: "unknown".to_string(),
-                message: Some("Not configured".to_string()),
-            },
+            database,
             redis: ComponentStatus {
                 status: "unknown".to_string(),
                 message: Some("Not configured".to_string()),
@@ -1120,8 +1138,36 @@ async fn create_scan(
     let job = ScanJob::new(target_id);
     jobs.write().await.insert(id.clone(), job);
 
+    // Persist the job to PostgreSQL when a database is configured.
+    if let Some(db) = state.database.clone() {
+        let job_id: Id<JobRecord> =
+            Id::from_uuid(Uuid::parse_str(&id).expect("scan id is a valid UUID"));
+        let scan_record_id: Id<ScanRecord> =
+            Id::from_uuid(Uuid::parse_str(&id).expect("scan id is a valid UUID"));
+        let job_record = JobRecord {
+            id: job_id,
+            scan_id: scan_record_id,
+            job_type: "scan".to_string(),
+            status: "pending".to_string(),
+            priority: 0,
+            payload: serde_json::json!({ "target_id": target_id_str.clone() }),
+            result: None,
+            error: None,
+            attempts: 0,
+            max_attempts: 0,
+            worker_id: None,
+            queued_at: Utc::now().to_rfc3339(),
+            started_at: None,
+            completed_at: None,
+        };
+        if let Err(e) = db.create(&job_record).await {
+            warn!(scan_id = %id, error = %e, "failed to persist scan job");
+        }
+    }
+
     let scan_id_clone = id.clone();
     let governor = state.governor.clone();
+    let target_id_for_spawn = target_id_str.clone();
     tokio::spawn(async move {
         // The slot is released on every exit below, including the engine-error arm.
         // A panic would skip it and leak a slot permanently, so `run_scan` is not
@@ -1149,14 +1195,75 @@ async fn create_scan(
                 // engine's manager is not filtered per scan, it also copied
                 // findings belonging to *other* scans on every completion. Its
                 // failure was discarded with `let _ =`.
-                jobs.write().await.insert(scan_id_clone, completed_job);
+                let status = completed_job.status.to_string();
+                let errors = completed_job.errors.clone();
+                let completed_at = completed_job.completed_at.clone();
+                jobs.write()
+                    .await
+                    .insert(scan_id_clone.clone(), completed_job);
+                if let Some(db) = state.database.clone() {
+                    let job_id: Id<JobRecord> = Id::from_uuid(
+                        Uuid::parse_str(&scan_id_clone).expect("scan id is a valid UUID"),
+                    );
+                    let job = JobRecord {
+                        id: job_id,
+                        scan_id: Id::from_uuid(
+                            Uuid::parse_str(&scan_id_clone).expect("scan id is a valid UUID"),
+                        ),
+                        job_type: "scan".to_string(),
+                        status,
+                        priority: 0,
+                        payload: serde_json::json!({ "target_id": target_id_for_spawn.clone() }),
+                        result: None,
+                        error: if errors.is_empty() {
+                            None
+                        } else {
+                            Some(errors.join("\n"))
+                        },
+                        attempts: 0,
+                        max_attempts: 0,
+                        worker_id: None,
+                        queued_at: Utc::now().to_rfc3339(),
+                        started_at: None,
+                        completed_at,
+                    };
+                    if let Err(e) = db.update(&job).await {
+                        warn!(scan_id = %scan_id_clone, error = %e, "failed to update scan job");
+                    }
+                }
             }
             Err(e) => {
                 error!(scan_id = %scan_id_clone, error = %e, "Scan failed");
                 let mut failed_job = ScanJob::new(plan.target.id.clone());
                 failed_job.status = ScanStatus::Failed;
                 failed_job.errors.push(e.to_string());
-                jobs.write().await.insert(scan_id_clone, failed_job);
+                jobs.write().await.insert(scan_id_clone.clone(), failed_job);
+                if let Some(db) = state.database.clone() {
+                    let job_id: Id<JobRecord> = Id::from_uuid(
+                        Uuid::parse_str(&scan_id_clone).expect("scan id is a valid UUID"),
+                    );
+                    let job = JobRecord {
+                        id: job_id,
+                        scan_id: Id::from_uuid(
+                            Uuid::parse_str(&scan_id_clone).expect("scan id is a valid UUID"),
+                        ),
+                        job_type: "scan".to_string(),
+                        status: "failed".to_string(),
+                        priority: 0,
+                        payload: serde_json::json!({ "target_id": target_id_for_spawn.clone() }),
+                        result: None,
+                        error: Some(e.to_string()),
+                        attempts: 0,
+                        max_attempts: 0,
+                        worker_id: None,
+                        queued_at: Utc::now().to_rfc3339(),
+                        started_at: None,
+                        completed_at: None,
+                    };
+                    if let Err(e) = db.update(&job).await {
+                        warn!(scan_id = %scan_id_clone, error = %e, "failed to update scan job");
+                    }
+                }
             }
         }
 
@@ -2172,6 +2279,7 @@ fn build_state(
     config: &spectra_config::Config,
     jwt_service: Arc<JwtService>,
     user_store: UserStore,
+    database: Option<Arc<PostgresDatabase>>,
 ) -> AppState {
     // Built once and handed to both the state and the engine. Constructing them
     // separately is what produced the split-brain: the engine wrote to its own
@@ -2238,6 +2346,7 @@ fn build_state(
         scan_jobs: Arc::new(RwLock::new(HashMap::new())),
         user_store,
         login_throttle: LoginThrottle::default(),
+        database,
     }
 }
 
@@ -2263,7 +2372,20 @@ async fn main() -> anyhow::Result<()> {
     // No baked-in credentials. Refuse to boot if no admin can be established.
     let user_store = UserStore::bootstrap().map_err(|e| anyhow::anyhow!("{e}"))?;
 
-    let state = build_state(&config, jwt_service, user_store);
+    let database = match std::env::var("SPECTRA_DATABASE_URL") {
+        Ok(url) => {
+            let db = PostgresDatabase::new(&url)
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to connect to database: {e}"))?;
+            db.run_migrations("migrations")
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to run migrations: {e}"))?;
+            Some(Arc::new(db))
+        }
+        Err(_) => None,
+    };
+
+    let state = build_state(&config, jwt_service, user_store, database);
 
     let static_dir = resolve_static_dir();
 
@@ -2773,7 +2895,7 @@ mod tests {
                 jwt_service.clone(),
                 spectra_auth::auth_middleware_with_state,
             ))
-            .with_state(build_state(&config, jwt_service.clone(), user_store));
+            .with_state(build_state(&config, jwt_service.clone(), user_store, None));
 
         (app, jwt_service)
     }
@@ -2811,6 +2933,7 @@ mod tests {
                 UserStore {
                     users: Arc::new(RwLock::new(HashMap::new())),
                 },
+                None,
             ));
 
         (app, jwt_service)
@@ -3318,6 +3441,7 @@ mod tests {
             UserStore {
                 users: Arc::new(RwLock::new(HashMap::new())),
             },
+            None,
         )
     }
 
@@ -3727,6 +3851,7 @@ mod tests {
             UserStore {
                 users: Arc::new(RwLock::new(HashMap::new())),
             },
+            None,
         );
 
         let stats = state.governor.stats().await;

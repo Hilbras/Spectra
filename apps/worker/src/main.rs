@@ -6,6 +6,7 @@ use tracing::{debug, error, info, warn};
 use spectra_core::Id;
 use spectra_engine::{ScanEngine, ScanPlan};
 use spectra_scheduler::{InMemoryJobQueue, Job, JobQueue};
+use spectra_storage::pg::PostgresDatabase;
 use spectra_target::{TargetId, TargetService};
 
 #[derive(Debug, Clone)]
@@ -87,14 +88,14 @@ struct Worker {
     running: Arc<AtomicBool>,
     heartbeat_interval: Duration,
     metrics_interval: Duration,
-    job_queue: Arc<InMemoryJobQueue>,
+    job_queue: Arc<dyn JobQueue>,
     target_service: Arc<TargetService>,
 }
 
 impl Worker {
     fn new(
         running: Arc<AtomicBool>,
-        job_queue: Arc<InMemoryJobQueue>,
+        job_queue: Arc<dyn JobQueue>,
         target_service: Arc<TargetService>,
     ) -> Self {
         Self {
@@ -277,7 +278,20 @@ async fn main() -> anyhow::Result<()> {
         r.store(false, Ordering::SeqCst);
     })?;
 
-    let job_queue = Arc::new(InMemoryJobQueue::with_defaults());
+    let job_queue: Arc<dyn JobQueue> = match std::env::var("SPECTRA_DATABASE_URL") {
+        Ok(url) => {
+            let db = PostgresDatabase::new(&url)
+                .await
+                .expect("failed to connect to PostgreSQL");
+            db.run_migrations("migrations")
+                .await
+                .expect("failed to run migrations");
+            Arc::new(spectra_scheduler::pg_queue::PostgresJobQueue::new(
+                Arc::new(db),
+            ))
+        }
+        Err(_) => Arc::new(InMemoryJobQueue::with_defaults()),
+    };
     let target_service = Arc::new(TargetService::new());
 
     let worker = Worker::new(running.clone(), job_queue, target_service)

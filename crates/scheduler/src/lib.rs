@@ -1,3 +1,5 @@
+pub mod pg_queue;
+
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::sync::Arc;

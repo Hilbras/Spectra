@@ -24,7 +24,9 @@ CREATE TABLE IF NOT EXISTS findings (
     cwe_id VARCHAR(50),
     remediation TEXT,
     evidence JSONB NOT NULL DEFAULT '[]',
-    references JSONB NOT NULL DEFAULT '[]',
+    -- `references` is a reserved SQL keyword, so it needs quoting as a column name.
+    -- Unquoted, this file does not parse at all.
+    "references" JSONB NOT NULL DEFAULT '[]',
     tags JSONB NOT NULL DEFAULT '[]',
     first_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen TIMESTAMPTZ NOT NULL DEFAULT NOW(),

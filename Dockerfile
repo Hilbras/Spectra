@@ -13,8 +13,8 @@ COPY apps/ apps/
 
 # The workspace no longer links against OpenSSL: reqwest uses rustls, matching
 # sqlx's `runtime-tokio-rustls`. No libssl-dev is required.
-RUN cargo build --release --bin spectra-api --bin spectra-worker --bin spectra-cli \
-    && strip target/release/spectra-api target/release/spectra-worker target/release/spectra-cli
+RUN cargo build --release --bin spectra-api --bin spectra-worker --bin spectra \
+    && strip target/release/spectra-api target/release/spectra-worker target/release/spectra
 
 # --- Runtime stage -----------------------------------------------------------
 FROM debian:bookworm-slim
@@ -32,7 +32,7 @@ RUN useradd --system --create-home --home-dir /home/spectra --shell /usr/sbin/no
 
 COPY --from=builder /app/target/release/spectra-api /usr/local/bin/
 COPY --from=builder /app/target/release/spectra-worker /usr/local/bin/
-COPY --from=builder /app/target/release/spectra-cli /usr/local/bin/
+COPY --from=builder /app/target/release/spectra /usr/local/bin/
 
 # The dashboard is served by spectra-api. It was previously omitted, so the
 # compile-time `CARGO_MANIFEST_DIR` path resolved to a directory that does not

@@ -27,6 +27,7 @@ uuid = { workspace = true }
 hostname = "0.4"
 ctrlc = "3"
 chrono = { workspace = true }
+spectra-storage = { workspace = true }
 
 [lints]
 workspace = true

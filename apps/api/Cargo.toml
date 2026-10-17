@@ -21,6 +21,7 @@ spectra-engine = { workspace = true }
 spectra-findings = { workspace = true }
 spectra-evidence = { workspace = true }
 spectra-verification = { workspace = true }
+spectra-storage = { workspace = true }
 spectra-scanner = { workspace = true }
 spectra-auth = { workspace = true }
 axum = { workspace = true }
@@ -36,6 +37,7 @@ anyhow = { workspace = true }
 uuid = { workspace = true }
 argon2 = { workspace = true }
 base64 = { workspace = true }
+chrono = { workspace = true }
 rand = "0.8"
 getrandom = "0.2"
 dirs = { workspace = true }

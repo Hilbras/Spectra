@@ -60,18 +60,36 @@ impl PostgresDatabase {
         Ok(())
     }
 
-    /// Runs database migrations from a directory.
-    pub async fn run_migrations(&self, migrations_dir: &str) -> StorageResult<()> {
+    /// Runs database migrations from a directory, applying only what is missing.
+    ///
+    /// Idempotent: each applied migration is recorded in `schema_migrations` with a
+    /// checksum, so a second run is a no-op rather than a failure. Each file is
+    /// applied inside its own transaction, so a migration that fails part-way
+    /// leaves nothing behind and is not recorded.
+    ///
+    /// The whole file is sent as one `raw_sql`, not split on `;`. `001_initial.sql`
+    /// contains `$$ ... $$` function bodies whose own semicolons would break a naive
+    /// split, and PostgreSQL's parser handles them correctly.
+    ///
+    /// A checksum mismatch on an already-applied migration is an error rather than a
+    /// skip. Editing a migration that has run somewhere is how environments diverge
+    /// permanently, and the quiet version of that bug is a schema that matches no
+    /// code path.
+    pub async fn run_migrations(&self, migrations_dir: &str) -> StorageResult<MigrationReport> {
         let path = std::path::Path::new(migrations_dir);
-        if !path.exists() {
+        if !path.is_dir() {
             return Err(SpectraError::Storage(format!(
-                "Migrations directory not found: {}",
+                "Migrations directory not found or not a directory: {}",
                 migrations_dir
             )));
         }
 
         let mut entries: Vec<_> = std::fs::read_dir(path)
-            .map_err(|e| SpectraError::Storage(e.to_string()))?
+            .map_err(|e| {
+                SpectraError::Storage(format!(
+                    "Could not read migrations directory {migrations_dir}: {e}"
+                ))
+            })?
             .filter_map(|e| e.ok())
             .filter(|e| {
                 e.path()
@@ -81,82 +99,270 @@ impl PostgresDatabase {
             })
             .collect();
 
+        // Sort by file name: the numeric prefix is the intended order.
         entries.sort_by_key(|e| e.file_name());
 
-        for entry in entries {
-            let sql = std::fs::read_to_string(entry.path())
-                .map_err(|e| SpectraError::Storage(e.to_string()))?;
+        self.ensure_migrations_table().await?;
 
-            sqlx::query(&sql).execute(&self.pool).await.map_err(|e| {
-                SpectraError::Storage(format!(
-                    "Failed to execute migration {}: {}",
-                    entry.path().display(),
-                    e
-                ))
+        let mut report = MigrationReport::default();
+
+        for entry in entries {
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            let version = file_name.trim_end_matches(".sql").to_string();
+
+            let sql = std::fs::read_to_string(entry.path()).map_err(|e| {
+                SpectraError::Storage(format!("Could not read migration {file_name}: {e}"))
             })?;
+
+            let checksum = self.md5(&sql).await?;
+            let applied: Option<String> =
+                sqlx::query_scalar("SELECT checksum FROM schema_migrations WHERE version = $1")
+                    .bind(&version)
+                    .fetch_optional(&self.pool)
+                    .await
+                    .map_err(|e| {
+                        SpectraError::Storage(format!(
+                            "Could not read migration state for {version}: {e}"
+                        ))
+                    })?;
+
+            if let Some(recorded) = applied {
+                if recorded != checksum {
+                    return Err(SpectraError::Storage(format!(
+                        "Migration {version} has already been applied but its contents \
+                         have changed (recorded checksum {recorded}, current {checksum}). \
+                         Applied migrations are immutable: add a new migration instead."
+                    )));
+                }
+                report.already_applied.push(version);
+                continue;
+            }
+
+            let mut tx = self.pool.begin().await.map_err(|e| {
+                SpectraError::Storage(format!("Could not begin transaction for {version}: {e}"))
+            })?;
+
+            sqlx::raw_sql(&sql).execute(&mut *tx).await.map_err(|e| {
+                SpectraError::Storage(format!("Failed to execute migration {version}: {e}"))
+            })?;
+
+            sqlx::query("INSERT INTO schema_migrations (version, checksum) VALUES ($1, $2)")
+                .bind(&version)
+                .bind(&checksum)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| {
+                    SpectraError::Storage(format!(
+                        "Could not record migration {version} as applied: {e}"
+                    ))
+                })?;
+
+            tx.commit().await.map_err(|e| {
+                SpectraError::Storage(format!("Could not commit migration {version}: {e}"))
+            })?;
+
+            report.applied.push(version);
         }
 
+        Ok(report)
+    }
+
+    /// Creates the bookkeeping table, if it is not already there.
+    async fn ensure_migrations_table(&self) -> StorageResult<()> {
+        sqlx::raw_sql(
+            "CREATE TABLE IF NOT EXISTS schema_migrations (
+                 version    TEXT PRIMARY KEY,
+                 checksum   TEXT NOT NULL,
+                 applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+             )",
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| {
+            SpectraError::Storage(format!("Could not create schema_migrations table: {e}"))
+        })?;
         Ok(())
+    }
+
+    /// A checksum of the migration text, computed by the database.
+    ///
+    /// Uses PostgreSQL's `md5` rather than a Rust hash so no new dependency is
+    /// needed and the checksum is stable across builds and platforms.
+    /// `std`'s `DefaultHasher` is explicitly not stable across Rust releases, which
+    /// would make a persisted checksum meaningless.
+    async fn md5(&self, text: &str) -> StorageResult<String> {
+        sqlx::query_scalar("SELECT md5($1)")
+            .bind(text)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| SpectraError::Storage(format!("Could not checksum migration: {e}")))
+    }
+
+    /// Drops every table, including `schema_migrations`.
+    ///
+    /// This is the rollback strategy. The migrations are forward-only and are not
+    /// paired with down-migrations: authoring six of those would mean six more SQL
+    /// files that are never exercised against real data, and a wrong `DROP` is worse
+    /// than no `DROP`. Recreating the schema from the migration set is the operation
+    /// that is actually verifiable, and it is what this performs.
+    pub async fn drop_schema(&self) -> StorageResult<u64> {
+        let rows = self
+            .query(
+                "SELECT tablename FROM pg_tables WHERE schemaname = 'public'",
+                &[],
+            )
+            .await?;
+
+        let mut dropped = 0u64;
+        for row in rows {
+            let table: String = row.get_by_name("tablename")?;
+            // Quoted, so a table name needing mixed case cannot become a syntax
+            // error or, worse, a different table.
+            dropped += self
+                .execute(&format!("DROP TABLE IF EXISTS \"{table}\" CASCADE"), &[])
+                .await?;
+        }
+        Ok(dropped)
     }
 }
 
-fn pg_row_to_row(pg_row: PgRow) -> Row {
+/// What a call to [`PostgresDatabase::run_migrations`] did.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct MigrationReport {
+    /// Migrations applied by this call, in the order they were applied.
+    pub applied: Vec<String>,
+    /// Migrations that were already recorded as applied, and therefore skipped.
+    pub already_applied: Vec<String>,
+}
+
+impl MigrationReport {
+    /// True when the call changed nothing.
+    pub fn is_noop(&self) -> bool {
+        self.applied.is_empty()
+    }
+}
+
+/// Convert a driver row into a [`Row`], or fail.
+///
+/// The distinction this makes is the whole point of the function, and it is the one
+/// the previous version got wrong. `try_get::<Option<T>>` returns `Ok(None)` when the
+/// column really is SQL `NULL`, and `Err(_)` when the value cannot be decoded as `T`
+/// — a wrong type, a truncated value, a renamed column. The old code collapsed both
+/// into `Null` with `.unwrap_or(None)`.
+///
+/// That converts a schema mismatch into plausible wrong data: a query against a
+/// renamed column returns NULL for it instead of saying so, and the caller reads a
+/// default. The first live instance was `pg_tables.tablename`, whose type is `NAME`
+/// and which the type match did not handle, so it silently became `Null`.
+///
+/// A `NULL` column is data. A column that could not be read is an error, and is
+/// reported as one.
+///
+/// Types not listed are an error too, rather than `Null`. A new PostgreSQL type
+/// appearing in a query should stop the caller from silently losing the column; the
+/// fix is to teach this function about it, which is a deliberate act.
+pub(crate) fn pg_row_to_row(pg_row: PgRow) -> StorageResult<Row> {
     use row_ext::Row as _;
 
     let mut columns = Vec::new();
     let mut values = Vec::new();
 
     for (idx, column) in pg_row.columns().iter().enumerate() {
-        columns.push(column.name().to_string());
+        let name = column.name().to_string();
+        let type_name = column.type_info().name().to_string();
 
-        let value: Value = match column.type_info().name() {
-            "bool" => {
-                let v: Option<bool> = pg_row.try_get(idx).unwrap_or(None);
-                v.map(Value::Bool).unwrap_or(Value::Null)
+        let value: Value = match type_name.as_str() {
+            "BOOL" => match pg_row.try_get::<Option<bool>, _>(idx) {
+                Ok(Some(v)) => Value::Bool(v),
+                Ok(None) => Value::Null,
+                Err(e) => return Err(decode_error(&name, &type_name, &e)),
+            },
+            "INT2" | "INT4" | "INT8" => match pg_row.try_get::<Option<i64>, _>(idx) {
+                Ok(Some(v)) => Value::Number(v.into()),
+                Ok(None) => Value::Null,
+                Err(e) => return Err(decode_error(&name, &type_name, &e)),
+            },
+            "FLOAT4" | "FLOAT8" => match pg_row.try_get::<Option<f64>, _>(idx) {
+                Ok(Some(v)) => {
+                    // A NaN or infinity has no JSON representation. Reporting NULL
+                    // would be the same silent substitution this function exists to
+                    // prevent, so it is an error.
+                    match serde_json::Number::from_f64(v) {
+                        Some(n) => Value::Number(n),
+                        None => {
+                            return Err(SpectraError::Storage(format!(
+                                "Column `{name}` ({type_name}) holds {v}, which has no JSON \
+                                 representation"
+                            )))
+                        }
+                    }
+                }
+                Ok(None) => Value::Null,
+                Err(e) => return Err(decode_error(&name, &type_name, &e)),
+            },
+            // `NAME` is PostgreSQL's internal identifier type, used by catalogs and
+            // by anything declared `VARCHAR(n)` without an explicit length in some
+            // paths. Its absence from this list is what made `tablename` decode as
+            // NULL.
+            "TEXT" | "VARCHAR" | "BPCHAR" | "NAME" | "CHAR" => {
+                match pg_row.try_get::<Option<String>, _>(idx) {
+                    Ok(Some(v)) => Value::String(v),
+                    Ok(None) => Value::Null,
+                    Err(e) => return Err(decode_error(&name, &type_name, &e)),
+                }
             }
-            "int4" | "int8" => {
-                let v: Option<i64> = pg_row.try_get(idx).unwrap_or(None);
-                v.map(|n| Value::Number(n.into())).unwrap_or(Value::Null)
+            "JSON" | "JSONB" => match pg_row.try_get::<Option<Value>, _>(idx) {
+                Ok(Some(v)) => v,
+                Ok(None) => Value::Null,
+                Err(e) => return Err(decode_error(&name, &type_name, &e)),
+            },
+            "UUID" => match pg_row.try_get::<Option<sqlx::types::Uuid>, _>(idx) {
+                Ok(Some(v)) => Value::String(v.to_string()),
+                Ok(None) => Value::Null,
+                Err(e) => return Err(decode_error(&name, &type_name, &e)),
+            },
+            "BYTEA" => match pg_row.try_get::<Option<Vec<u8>>, _>(idx) {
+                Ok(Some(bytes)) => {
+                    Value::String(bytes.iter().map(|b| format!("{b:02x}")).collect::<String>())
+                }
+                Ok(None) => Value::Null,
+                Err(e) => return Err(decode_error(&name, &type_name, &e)),
+            },
+            "TIMESTAMPTZ" | "TIMESTAMP" => {
+                match pg_row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>(idx) {
+                    Ok(Some(t)) => Value::String(t.to_rfc3339()),
+                    Ok(None) => Value::Null,
+                    Err(e) => return Err(decode_error(&name, &type_name, &e)),
+                }
             }
-            "float4" | "float8" => {
-                let v: Option<f64> = pg_row.try_get(idx).unwrap_or(None);
-                v.and_then(serde_json::Number::from_f64)
-                    .map(Value::Number)
-                    .unwrap_or(Value::Null)
+            "DATE" => match pg_row.try_get::<Option<chrono::NaiveDate>, _>(idx) {
+                Ok(Some(d)) => Value::String(d.to_string()),
+                Ok(None) => Value::Null,
+                Err(e) => return Err(decode_error(&name, &type_name, &e)),
+            },
+            other => {
+                return Err(SpectraError::Storage(format!(
+                    "Column `{name}` has PostgreSQL type `{other}`, which this row decoder \
+                     does not handle. Teaching it that type is a deliberate change; it is \
+                     not reported as NULL, because NULL is indistinguishable from a value \
+                     that was never read."
+                )))
             }
-            "text" | "varchar" | "bpchar" => {
-                let v: Option<String> = pg_row.try_get(idx).unwrap_or(None);
-                v.map(Value::String).unwrap_or(Value::Null)
-            }
-            "jsonb" | "json" => {
-                let v: Option<Value> = pg_row.try_get(idx).unwrap_or(None);
-                v.unwrap_or(Value::Null)
-            }
-            "uuid" => {
-                let v: Option<sqlx::types::Uuid> = pg_row.try_get(idx).unwrap_or(None);
-                v.map(|u| Value::String(u.to_string()))
-                    .unwrap_or(Value::Null)
-            }
-            "bytea" => {
-                let v: Option<Vec<u8>> = pg_row.try_get(idx).unwrap_or(None);
-                v.map(|bytes| {
-                    let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
-                    Value::String(hex)
-                })
-                .unwrap_or(Value::Null)
-            }
-            "timestamptz" | "timestamp" => {
-                let v: Option<chrono::DateTime<chrono::Utc>> = pg_row.try_get(idx).unwrap_or(None);
-                v.map(|t| Value::String(t.to_rfc3339()))
-                    .unwrap_or(Value::Null)
-            }
-            _ => Value::Null,
         };
 
+        columns.push(name);
         values.push(value);
     }
 
-    Row::new(columns, values)
+    Ok(Row::new(columns, values))
+}
+
+/// A decode failure, naming the column, its type, and the driver's reason.
+fn decode_error(column: &str, type_name: &str, cause: &sqlx::Error) -> SpectraError {
+    SpectraError::Storage(format!(
+        "Could not read column `{column}` as {type_name}: {cause}. This is a schema or \
+         query mismatch, not a missing value -- a genuinely NULL column decodes to NULL."
+    ))
 }
 
 #[async_trait]
@@ -176,7 +382,7 @@ impl Database for PostgresDatabase {
             .await
             .map_err(|e| SpectraError::Storage(format!("Query failed: {}", e)))?;
 
-        Ok(rows.into_iter().map(pg_row_to_row).collect())
+        rows.into_iter().map(pg_row_to_row).collect()
     }
 
     async fn query_one(&self, query: &str, params: &[Value]) -> StorageResult<Option<Row>> {
@@ -185,7 +391,7 @@ impl Database for PostgresDatabase {
             .await
             .map_err(|e| SpectraError::Storage(format!("Query failed: {}", e)))?;
 
-        Ok(row.map(pg_row_to_row))
+        row.map(pg_row_to_row).transpose()
     }
 
     async fn query_scalar(&self, query: &str, params: &[Value]) -> StorageResult<Option<Value>> {
@@ -229,7 +435,7 @@ impl Transaction for PostgresTransaction {
             .await
             .map_err(|e| SpectraError::Storage(format!("Transaction query failed: {}", e)))?;
 
-        Ok(rows.into_iter().map(pg_row_to_row).collect())
+        rows.into_iter().map(pg_row_to_row).collect()
     }
 
     async fn commit(self: Box<Self>) -> StorageResult<()> {

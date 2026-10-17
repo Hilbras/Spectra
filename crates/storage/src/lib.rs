@@ -1,5 +1,6 @@
 pub mod in_memory;
 pub mod pg;
+pub mod pg_repos;
 pub mod repositories;
 pub mod search;
 
