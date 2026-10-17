@@ -25,9 +25,17 @@ function build() {
   fs.copyFileSync(srcBinary, destBinary);
   fs.chmodSync(destBinary, 0o755);
 
-  // Create wrapper script
+  // Create wrapper script. Resolve symlinks so `dirname` points at the real
+  // dist/ directory even when invoked through an npm global-bin symlink.
   const wrapper = `#!/usr/bin/env bash
-exec "$(dirname "$0")/spectra" "$@"`;
+SOURCE="\${BASH_SOURCE[0]}"
+while [ -h "\$SOURCE" ]; do
+  DIR="\$(cd -P "\$(dirname "\$SOURCE")" && pwd)"
+  SOURCE="\$(readlink "\$SOURCE")"
+  [[ \$SOURCE != /* ]] && SOURCE="\$DIR/\$SOURCE"
+done
+DIR="\$(cd -P "\$(dirname "\$SOURCE")" && pwd)"
+exec "\$DIR/spectra" "\$@"`;
   fs.writeFileSync(path.join(distDir, "cli.js"), wrapper);
   fs.chmodSync(path.join(distDir, "cli.js"), 0o755);
 

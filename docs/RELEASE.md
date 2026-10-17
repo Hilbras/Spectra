@@ -1,6 +1,6 @@
 # Release Process
 
-## v0.1.0 Release Checklist
+## v0.1.2 Release Checklist
 
 ### Pre-Release
 
@@ -9,18 +9,19 @@
 - [x] Rustfmt clean: `cargo fmt --all -- --check`
 - [x] Documentation complete
 - [x] CHANGELOG updated
-- [x] Version synchronized: all crates report `0.1.0`
+- [x] Version synchronized: all crates report `0.1.2`
+- [x] `POST /scans` writes to Postgres; `GET /scans`/`GET /scans/:id` read from Postgres fallback (`docs/postgres-e2e.md`)
 
 ### Release
 
-- [x] Git tag: `v0.1.0`
-- [x] Push tag: `git push origin v0.1.0`
+- [x] Git tag: `v0.1.2`
+- [x] Push tag: `git push origin v0.1.2`
 - [x] GitHub repository: `https://github.com/Hilbras/Spectra`
 
 ### npm Publishing
 
 - [x] Package name: `@hilbras/spectra`
-- [x] Version: `0.1.0`
+- [x] Version: `0.1.2`
 - [x] Published to npm registry
 
 ### Post-Release
@@ -32,7 +33,7 @@
 
 ## Version Sources
 
-All must report `0.1.0`:
+All must report `0.1.2`:
 
 | Source | Location |
 |--------|----------|
@@ -41,7 +42,7 @@ All must report `0.1.0`:
 | CLI | `spectra --version` |
 | API | Health check response |
 | npm | `npm/package.json` version |
-| Git tag | `v0.1.0` |
+| Git tag | `v0.1.2` |
 
 ## Building Release Artifacts
 
@@ -100,7 +101,7 @@ cargo build --release
 ## Known Limitations
 
 - No built-in API authentication
-- PostgreSQL storage not yet wired (in-memory only)
+- `JobRecord` Postgres rows do not persist engine metrics (asset/crawl/technology counts, findings, observations, evidence, duration); `GET /scans/:id` falls back to zero/defaults when read from Postgres
 - No Redis-backed scheduler
 - No WASM/Python plugin sandboxing
 

@@ -129,6 +129,24 @@ impl JobRepository for PostgresDatabase {
         }
     }
 
+    async fn list_all(&self) -> StorageResult<Vec<JobRecord>> {
+        let rows = sqlx::query(
+            "SELECT id, scan_id, worker_id, job_type, status, priority, payload, result, \
+             error_message, attempts, max_retries, started_at, completed_at, created_at, \
+             updated_at FROM scan_jobs ORDER BY created_at",
+        )
+        .fetch_all(self.pool())
+        .await
+        .map_err(|e| SpectraError::Storage(format!("List all scan_jobs failed: {e}")))?;
+
+        rows.into_iter()
+            .map(pg_row_to_row)
+            .collect::<StorageResult<Vec<Row>>>()?
+            .into_iter()
+            .map(row_to_job_record)
+            .collect()
+    }
+
     async fn list_by_scan(&self, scan_id: &Id<ScanRecord>) -> StorageResult<Vec<JobRecord>> {
         let rows = sqlx::query(
             "SELECT id, scan_id, worker_id, job_type, status, priority, payload, result, \

@@ -1300,33 +1300,90 @@ async fn get_scan(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<ScanDetailResponse>> {
-    let jobs = state.scan_jobs.read().await;
-    let job = jobs.get(&id).ok_or_else(|| {
-        (
-            StatusCode::NOT_FOUND,
-            Json(ErrorResponse {
-                error: "Scan not found".to_string(),
-                code: "NOT_FOUND".to_string(),
-            }),
-        )
-    })?;
-    Ok(Json(ScanDetailResponse {
-        id: id.clone(),
-        target_id: job.target_id.to_string(),
-        status: job.status.to_string(),
-        started_at: job.started_at.clone(),
-        completed_at: job.completed_at.clone(),
-        network_asset_count: job.network_asset_count,
-        crawl_page_count: job.crawl_page_count,
-        technology_count: job.technology_count,
-        total_findings: job.metrics.total_findings,
-        findings_by_severity: serde_json::json!(job.metrics.findings_by_severity),
-        observations_recorded: job.metrics.observations_recorded,
-        evidence_collected: job.metrics.evidence_collected,
-        scan_duration_ms: job.metrics.scan_duration_ms,
-        errors: job.errors.clone(),
-        report_summary: job.report_summary.clone(),
-    }))
+    // In-memory first: it carries the full detail (metrics, findings, assets,
+    // etc.) that `JobRecord` does not persist.
+    {
+        let jobs = state.scan_jobs.read().await;
+        if let Some(job) = jobs.get(&id) {
+            return Ok(Json(ScanDetailResponse {
+                id: id.clone(),
+                target_id: job.target_id.to_string(),
+                status: job.status.to_string(),
+                started_at: job.started_at.clone(),
+                completed_at: job.completed_at.clone(),
+                network_asset_count: job.network_asset_count,
+                crawl_page_count: job.crawl_page_count,
+                technology_count: job.technology_count,
+                total_findings: job.metrics.total_findings,
+                findings_by_severity: serde_json::json!(job.metrics.findings_by_severity),
+                observations_recorded: job.metrics.observations_recorded,
+                evidence_collected: job.metrics.evidence_collected,
+                scan_duration_ms: job.metrics.scan_duration_ms,
+                errors: job.errors.clone(),
+                report_summary: job.report_summary.clone(),
+            }));
+        }
+    }
+
+    // Not in memory: fall back to the durable Postgres store when configured, so
+    // a scan created through POST /scans stays readable via GET /scans/:id even
+    // after a restart clears the in-memory map. `JobRecord` does not carry the
+    // engine metrics, so those fields are reported as zero/defaults here.
+    if let Some(db) = state.database.clone() {
+        let job_id: Id<JobRecord> = match Uuid::parse_str(&id) {
+            Ok(uuid) => Id::from_uuid(uuid),
+            Err(_) => {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorResponse {
+                        error: "Scan not found".to_string(),
+                        code: "NOT_FOUND".to_string(),
+                    }),
+                ))
+            }
+        };
+        if let Some(record) = db.get(&job_id).await.map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: e.to_string(),
+                    code: "INTERNAL_ERROR".to_string(),
+                }),
+            )
+        })? {
+            let target_id = record
+                .payload
+                .get("target_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            return Ok(Json(ScanDetailResponse {
+                id: id.clone(),
+                target_id,
+                status: record.status,
+                started_at: record.started_at,
+                completed_at: record.completed_at,
+                network_asset_count: 0,
+                crawl_page_count: 0,
+                technology_count: 0,
+                total_findings: 0,
+                findings_by_severity: serde_json::json!({}),
+                observations_recorded: 0,
+                evidence_collected: 0,
+                scan_duration_ms: 0,
+                errors: record.error.map(|e| vec![e]).unwrap_or_default(),
+                report_summary: None,
+            }));
+        }
+    }
+
+    Err((
+        StatusCode::NOT_FOUND,
+        Json(ErrorResponse {
+            error: "Scan not found".to_string(),
+            code: "NOT_FOUND".to_string(),
+        }),
+    ))
 }
 
 #[derive(Serialize)]
@@ -1341,12 +1398,51 @@ async fn list_scans(
     State(state): State<AppState>,
     Query(pagination): Query<Pagination>,
 ) -> Json<ScanListResponse> {
-    let jobs = state.scan_jobs.read().await;
-    let total = jobs.len();
     let offset = pagination.offset();
     let limit = pagination.limit();
     let page = pagination.page.unwrap_or(1).max(1);
 
+    // When a database is configured, reads are durable: POST /scans writes to
+    // Postgres, so GET /scans must read from Postgres too (the in-memory map is
+    // empty after a restart). Otherwise fall back to the in-memory map, which
+    // preserves the existing behavior for tests and local runs.
+    if let Some(db) = state.database.clone() {
+        let records = db.list_all().await.unwrap_or_else(|e| {
+            warn!(error = %e, "failed to list scan jobs from database");
+            Vec::new()
+        });
+        let total = records.len();
+        let scans: Vec<serde_json::Value> = records
+            .into_iter()
+            .skip(offset)
+            .take(limit)
+            .map(|record| {
+                let target_id = record
+                    .payload
+                    .get("target_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                serde_json::json!({
+                    "id": record.id.to_string(),
+                    "target_id": target_id,
+                    "status": record.status,
+                    "total_findings": 0,
+                    "started_at": record.started_at,
+                    "completed_at": record.completed_at,
+                })
+            })
+            .collect();
+        return Json(ScanListResponse {
+            scans,
+            total,
+            page,
+            per_page: limit,
+        });
+    }
+
+    let jobs = state.scan_jobs.read().await;
+    let total = jobs.len();
     let scans: Vec<serde_json::Value> = jobs
         .iter()
         .skip(offset)

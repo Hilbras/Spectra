@@ -281,6 +281,11 @@ impl JobRepository for InMemoryJobRepository {
         Ok(map.get(&id.to_string()).cloned())
     }
 
+    async fn list_all(&self) -> StorageResult<Vec<JobRecord>> {
+        let map = self.inner.read().await;
+        Ok(map.values().cloned().collect())
+    }
+
     async fn list_by_scan(
         &self,
         scan_id: &spectra_core::Id<ScanRecord>,

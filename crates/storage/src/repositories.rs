@@ -138,6 +138,7 @@ pub struct JobRecord {
 pub trait JobRepository: Send + Sync {
     async fn create(&self, job: &JobRecord) -> StorageResult<JobRecord>;
     async fn get(&self, id: &Id<JobRecord>) -> StorageResult<Option<JobRecord>>;
+    async fn list_all(&self) -> StorageResult<Vec<JobRecord>>;
     async fn list_by_scan(&self, scan_id: &Id<ScanRecord>) -> StorageResult<Vec<JobRecord>>;
     async fn update(&self, job: &JobRecord) -> StorageResult<()>;
     async fn delete(&self, id: &Id<JobRecord>) -> StorageResult<()>;
