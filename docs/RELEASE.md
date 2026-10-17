@@ -1,6 +1,6 @@
 # Release Process
 
-## v0.1.3 Release Checklist
+## v0.1.4 Release Checklist
 
 ### Pre-Release
 
@@ -9,19 +9,19 @@
 - [x] Rustfmt clean: `cargo fmt --all -- --check`
 - [x] Documentation complete
 - [x] CHANGELOG updated
-- [x] Version synchronized: all crates report `0.1.3`
+- [x] Version synchronized: all crates report `0.1.4`
 - [x] `POST /scans` writes to Postgres; `GET /scans`/`GET /scans/:id` read from Postgres fallback (`docs/postgres-e2e.md`)
 
 ### Release
 
-- [ ] Git tag: `v0.1.3`
-- [ ] Push tag: `git push origin v0.1.3`
+- [ ] Git tag: `v0.1.4`
+- [ ] Push tag: `git push origin v0.1.4`
 - [ ] GitHub repository: `https://github.com/Hilbras/Spectra`
 
 ### npm Publishing
 
 - [ ] Package name: `@hilbras/spectra`
-- [ ] Version: `0.1.3`
+- [ ] Version: `0.1.4`
 - [ ] Published to npm registry
 
 ### Post-Release
@@ -33,7 +33,7 @@
 
 ## Version Sources
 
-All must report `0.1.3`:
+All must report `0.1.4`:
 
 | Source | Location |
 |--------|----------|
